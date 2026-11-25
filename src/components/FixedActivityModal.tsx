@@ -14,6 +14,7 @@ import {
   isValidDateString,
 } from '../utils/dateUtils';
 import { expandFixedActivityDates } from '../utils/schedulingUtils';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface FixedActivityModalProps {
   isOpen: boolean;
@@ -21,24 +22,9 @@ interface FixedActivityModalProps {
   initialEditActivityId?: string | null;
 }
 
-const SAT_TO_FRI_DAYS: { dayNum: number; label: string }[] = [
-  { dayNum: 6, label: 'Sat' },
-  { dayNum: 0, label: 'Sun' },
-  { dayNum: 1, label: 'Mon' },
-  { dayNum: 2, label: 'Tue' },
-  { dayNum: 3, label: 'Wed' },
-  { dayNum: 4, label: 'Thu' },
-  { dayNum: 5, label: 'Fri' },
-];
+const SAT_TO_FRI_DAY_NUMS: number[] = [6, 0, 1, 2, 3, 4, 5];
 
 const TIME_SLOTS: number[] = Array.from({ length: (22 - 7) * 2 + 1 }, (_, i) => 7 * 60 + i * 30);
-
-const KIND_LABELS: Record<FixedActivityKind, string> = {
-  class: 'Class / Lecture',
-  meeting: 'Meeting',
-  lunch: 'Lunch Break',
-  non_working: 'Non-Working Block',
-};
 
 export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
   isOpen,
@@ -55,6 +41,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
     deleteFixedActivity,
     updateWorkCapacity,
   } = useAppState();
+  const { t, language } = useLanguage();
 
   const [activeSection, setActiveSection] = useState<'activities' | 'capacity'>('activities');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -166,17 +153,17 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
     e.preventDefault();
     const trimmed = title.trim();
     if (!trimmed) {
-      setError('Enter a title for this fixed activity.');
+      setError(t.fixedModal.errNoTitle);
       return;
     }
     if (endMinutes <= startMinutes) {
-      setError('End time must be after start time.');
+      setError(t.fixedModal.errEndTime);
       return;
     }
 
     if (editingId) {
       if (!isValidDateString(singleDate)) {
-        setError('Enter a valid date (YYYY-MM-DD).');
+        setError(t.fixedModal.errInvalidDate);
         return;
       }
       updateFixedActivity(editingId, {
@@ -190,7 +177,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
       });
     } else {
       if (recurrence !== 'once' && daysOfWeek.length === 0) {
-        setError('Select at least one day of the week to generate occurrences.');
+        setError(t.fixedModal.errNoDays);
         return;
       }
       createFixedActivity({
@@ -233,7 +220,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
             <div className="flex items-center gap-2">
               <Lock className="w-4 h-4 text-zinc-700" />
               <h2 id="fixed-activities-title" className="text-base font-semibold text-zinc-900">
-                Fixed Activities &amp; Capacity
+                {t.fixedModal.title}
               </h2>
             </div>
             <div className="flex items-center gap-1 p-0.5 bg-zinc-100 rounded-md border border-zinc-200">
@@ -246,7 +233,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                     : 'text-zinc-600 hover:text-zinc-900'
                 }`}
               >
-                Instances ({fixedActivities.length})
+                {t.fixedModal.tabInstances(fixedActivities.length)}
               </button>
               <button
                 type="button"
@@ -257,7 +244,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                     : 'text-zinc-600 hover:text-zinc-900'
                 }`}
               >
-                Working Window
+                {t.fixedModal.tabCapacity}
               </button>
             </div>
           </div>
@@ -266,7 +253,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
             type="button"
             onClick={onClose}
             className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-md"
-            aria-label="Close modal"
+            aria-label={t.common.closeModal}
           >
             <X className="w-4 h-4" />
           </button>
@@ -279,7 +266,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
               <form onSubmit={handleSubmit} className="space-y-3.5">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                    {editingId ? 'Edit Individual Occurrence' : 'Schedule Fixed Activity'}
+                    {editingId ? t.fixedModal.editHeading : t.fixedModal.createHeading}
                   </h3>
                   {editingId && (
                     <button
@@ -287,14 +274,14 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                       onClick={resetForm}
                       className="text-xs font-medium text-zinc-600 hover:text-zinc-900 underline"
                     >
-                      Cancel edit
+                      {t.fixedModal.cancelEdit}
                     </button>
                   )}
                 </div>
 
                 {editingId && (
                   <p className="text-[11px] text-zinc-500 bg-zinc-50 border border-zinc-200 rounded px-2.5 py-1.5">
-                    Editing this individual date block only. Other occurrences remain independent.
+                    {t.fixedModal.editNote}
                   </p>
                 )}
 
@@ -306,14 +293,14 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
 
                 <div>
                   <label htmlFor="fa-title" className="block text-xs font-medium text-zinc-700 mb-1">
-                    Activity Title
+                    {t.fixedModal.titleLabel}
                   </label>
                   <input
                     id="fa-title"
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="e.g., Lean Operations Seminar or Lunch Break"
+                    placeholder={t.fixedModal.titlePlaceholder}
                     className="w-full px-3 py-2 text-sm text-zinc-900 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
                   />
                 </div>
@@ -321,7 +308,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label htmlFor="fa-kind" className="block text-xs font-medium text-zinc-700 mb-1">
-                      Type
+                      {t.fixedModal.typeLabel}
                     </label>
                     <select
                       id="fa-kind"
@@ -329,17 +316,17 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                       onChange={(e) => handleKindChange(e.target.value as FixedActivityKind)}
                       className="w-full px-2.5 py-2 text-xs text-zinc-900 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
                     >
-                      <option value="class">Class / Lecture</option>
-                      <option value="meeting">Meeting</option>
-                      <option value="lunch">Lunch Break</option>
-                      <option value="non_working">Non-Working Block</option>
+                      <option value="class">{t.fixedModal.kinds.class}</option>
+                      <option value="meeting">{t.fixedModal.kinds.meeting}</option>
+                      <option value="lunch">{t.fixedModal.kinds.lunch}</option>
+                      <option value="non_working">{t.fixedModal.kinds.non_working}</option>
                     </select>
                   </div>
 
                   {!editingId ? (
                     <div>
                       <label htmlFor="fa-rec" className="block text-xs font-medium text-zinc-700 mb-1">
-                        Generate Pattern
+                        {t.fixedModal.patternLabel}
                       </label>
                       <select
                         id="fa-rec"
@@ -347,15 +334,15 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                         onChange={(e) => setRecurrence(e.target.value as RecurrenceFrequency)}
                         className="w-full px-2.5 py-2 text-xs text-zinc-900 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
                       >
-                        <option value="weekly">Weekly Batch</option>
-                        <option value="biweekly">Biweekly Batch</option>
-                        <option value="once">Single Date Only</option>
+                        <option value="weekly">{t.fixedModal.patterns.weekly}</option>
+                        <option value="biweekly">{t.fixedModal.patterns.biweekly}</option>
+                        <option value="once">{t.fixedModal.patterns.once}</option>
                       </select>
                     </div>
                   ) : (
                     <div>
                       <label htmlFor="fa-single-date" className="block text-xs font-medium text-zinc-700 mb-1">
-                        Date
+                        {t.fixedModal.dateLabel}
                       </label>
                       <input
                         id="fa-single-date"
@@ -371,16 +358,16 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                 {!editingId && recurrence !== 'once' && (
                   <div>
                     <span className="block text-xs font-medium text-zinc-700 mb-1.5">
-                      Days of Week
+                      {t.fixedModal.daysLabel}
                     </span>
                     <div className="grid grid-cols-7 gap-1">
-                      {SAT_TO_FRI_DAYS.map((d) => {
-                        const selected = daysOfWeek.includes(d.dayNum);
+                      {SAT_TO_FRI_DAY_NUMS.map((dayNum, idx) => {
+                        const selected = daysOfWeek.includes(dayNum);
                         return (
                           <button
-                            key={d.dayNum}
+                            key={dayNum}
                             type="button"
-                            onClick={() => toggleDay(d.dayNum)}
+                            onClick={() => toggleDay(dayNum)}
                             aria-pressed={selected}
                             className={`py-1.5 text-[11px] font-medium rounded border transition-colors ${
                               selected
@@ -388,7 +375,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                                 : 'bg-white text-zinc-700 border-zinc-300 hover:border-zinc-500'
                             }`}
                           >
-                            {d.label}
+                            {t.fixedModal.daysSatToFri[idx]}
                           </button>
                         );
                       })}
@@ -399,7 +386,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label htmlFor="fa-start-time" className="block text-xs font-medium text-zinc-700 mb-1">
-                      Start Time
+                      {t.fixedModal.startTimeLabel}
                     </label>
                     <select
                       id="fa-start-time"
@@ -421,7 +408,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
 
                   <div>
                     <label htmlFor="fa-end-time" className="block text-xs font-medium text-zinc-700 mb-1">
-                      End Time
+                      {t.fixedModal.endTimeLabel}
                     </label>
                     <select
                       id="fa-end-time"
@@ -443,7 +430,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                     {recurrence === 'once' ? (
                       <div className="col-span-2">
                         <label htmlFor="fa-once-date" className="block text-xs font-medium text-zinc-700 mb-1">
-                          Date
+                          {t.fixedModal.dateLabel}
                         </label>
                         <input
                           id="fa-once-date"
@@ -457,7 +444,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                       <>
                         <div>
                           <label htmlFor="fa-start-date" className="block text-xs font-medium text-zinc-700 mb-1">
-                            Start Date
+                            {t.fixedModal.startDateLabel}
                           </label>
                           <input
                             id="fa-start-date"
@@ -469,7 +456,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                         </div>
                         <div>
                           <label htmlFor="fa-end-date" className="block text-xs font-medium text-zinc-700 mb-1">
-                            End Date (Optional, +8w default)
+                            {t.fixedModal.endDateLabel}
                           </label>
                           <input
                             id="fa-end-date"
@@ -493,16 +480,18 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                       className="mt-0.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
                     />
                     <span>
-                      <span className="font-medium text-zinc-900 block">Counts as working time</span>
+                      <span className="font-medium text-zinc-900 block">
+                        {t.fixedModal.countsWorkingLabel}
+                      </span>
                       <span className="text-[11px] text-zinc-500">
-                        Included in workload &amp; capacity (e.g. classes, meetings)
+                        {t.fixedModal.countsWorkingHint}
                       </span>
                     </span>
                   </label>
 
                   <div>
                     <label htmlFor="fa-lean" className="block text-[11px] font-medium text-zinc-600 mb-1">
-                      Lean Class
+                      {t.fixedModal.leanClassLabel}
                     </label>
                     <select
                       id="fa-lean"
@@ -524,10 +513,10 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                   >
                     <Plus className="w-3.5 h-3.5" />
                     {editingId
-                      ? 'Save Individual Occurrence'
+                      ? t.fixedModal.saveOccurrence
                       : previewCount > 1
-                      ? `Create ${previewCount} Independent Occurrences`
-                      : 'Add Fixed Activity'}
+                      ? t.fixedModal.createOccurrences(previewCount)
+                      : t.fixedModal.addFixedBtn}
                   </button>
                 </div>
               </form>
@@ -536,7 +525,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
               <div className="space-y-3 border-t md:border-t-0 md:border-l border-zinc-200 pt-5 md:pt-0 md:pl-6">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                    Individual Occurrences
+                    {t.fixedModal.occurrencesHeading}
                   </h3>
                   <div className="inline-flex items-center p-0.5 bg-zinc-100 rounded border border-zinc-200 text-[10px] font-medium">
                     <button
@@ -546,7 +535,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                         listFilter === 'upcoming' ? 'bg-white text-zinc-900' : 'text-zinc-500'
                       }`}
                     >
-                      Upcoming
+                      {t.fixedModal.upcoming}
                     </button>
                     <button
                       type="button"
@@ -555,14 +544,14 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                         listFilter === 'all' ? 'bg-white text-zinc-900' : 'text-zinc-500'
                       }`}
                     >
-                      All ({fixedActivities.length})
+                      {t.fixedModal.allCount(fixedActivities.length)}
                     </button>
                   </div>
                 </div>
 
                 {sortedInstances.length === 0 ? (
                   <div className="p-6 border border-dashed border-zinc-300 rounded-md text-center text-xs text-zinc-500">
-                    No fixed activity occurrences match this filter.
+                    {t.fixedModal.emptyList}
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-[410px] overflow-y-auto pr-1">
@@ -582,7 +571,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                             </div>
                             <div className="text-[11px] text-zinc-500 mt-0.5 tabular-nums">
                               <span className="font-mono text-zinc-800">
-                                {formatShortDate(fa.date)}
+                                {formatShortDate(fa.date, language)}
                               </span>{' '}
                               ·{' '}
                               <span className="font-mono text-zinc-700">
@@ -596,7 +585,8 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                             <button
                               type="button"
                               onClick={() => loadForEdit(fa)}
-                              title="Edit this single occurrence"
+                              title={t.fixedModal.editOccurrenceTitle}
+                              aria-label={t.fixedModal.editOccurrenceTitle}
                               className="p-1 text-zinc-400 hover:text-zinc-900 rounded"
                             >
                               <Pencil className="w-3.5 h-3.5" />
@@ -607,7 +597,8 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                                 deleteFixedActivity(fa.id);
                                 if (editingId === fa.id) resetForm();
                               }}
-                              title="Delete this single occurrence"
+                              title={t.fixedModal.deleteOccurrenceTitle}
+                              aria-label={t.fixedModal.deleteOccurrenceTitle}
                               className="p-1 text-zinc-400 hover:text-red-600 rounded"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -616,7 +607,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                         </div>
 
                         <div className="mt-2 pt-2 border-t border-zinc-100 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-zinc-500 tabular-nums">
-                          <span>{KIND_LABELS[fa.kind]}</span>
+                          <span>{t.fixedModal.kinds[fa.kind]}</span>
                           <span className="text-zinc-300" aria-hidden="true">/</span>
                           <span
                             className={
@@ -625,7 +616,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                                 : 'text-zinc-400'
                             }
                           >
-                            {fa.countsAsWorkingTime ? 'Working' : 'Break'}
+                            {fa.countsAsWorkingTime ? t.fixedModal.workingTag : t.fixedModal.breakTag}
                           </span>
                           <span className="text-zinc-300" aria-hidden="true">/</span>
                           <span className="font-mono">{fa.valueCategory}</span>
@@ -633,8 +624,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
                             <>
                               <span className="text-zinc-300" aria-hidden="true">/</span>
                               <span className="text-zinc-700 font-medium">
-                                {fa.linkedStepIds.length} linked step
-                                {fa.linkedStepIds.length === 1 ? '' : 's'}
+                                {t.fixedModal.linkedStepsCount(fa.linkedStepIds.length)}
                               </span>
                             </>
                           )}
@@ -650,30 +640,32 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
               <div>
                 <h3 className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
                   <CalendarClock className="w-4 h-4 text-zinc-700" />
-                  Weekly Working Window &amp; Target Capacity
+                  {t.fixedModal.windowTitle}
                 </h3>
                 <p className="text-xs text-zinc-500 mt-1">
-                  Used to calculate remaining available working hours after deducting fixed lunch/non-working breaks, fixed working commitments, and scheduled WBS steps.
+                  {t.fixedModal.windowDesc}
                 </p>
               </div>
 
               <div>
-                <span className="block text-xs font-medium text-zinc-700 mb-2">Working Days</span>
+                <span className="block text-xs font-medium text-zinc-700 mb-2">
+                  {t.fixedModal.workingDaysLabel}
+                </span>
                 <div className="grid grid-cols-7 gap-1.5">
-                  {SAT_TO_FRI_DAYS.map((d) => {
-                    const active = workCapacity.workdays.includes(d.dayNum);
+                  {SAT_TO_FRI_DAY_NUMS.map((dayNum, idx) => {
+                    const active = workCapacity.workdays.includes(dayNum);
                     return (
                       <button
-                        key={d.dayNum}
+                        key={dayNum}
                         type="button"
-                        onClick={() => toggleWorkday(d.dayNum)}
+                        onClick={() => toggleWorkday(dayNum)}
                         className={`py-2 text-xs font-medium rounded border transition-colors ${
                           active
                             ? 'bg-zinc-900 text-white border-zinc-900'
                             : 'bg-white text-zinc-600 border-zinc-300 hover:border-zinc-500'
                         }`}
                       >
-                        {d.label}
+                        {t.fixedModal.daysSatToFri[idx]}
                       </button>
                     );
                   })}
@@ -683,7 +675,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label htmlFor="cap-start" className="block text-xs font-medium text-zinc-700 mb-1">
-                    Workday Start
+                    {t.fixedModal.workdayStartLabel}
                   </label>
                   <select
                     id="cap-start"
@@ -703,7 +695,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
 
                 <div>
                   <label htmlFor="cap-end" className="block text-xs font-medium text-zinc-700 mb-1">
-                    Workday End
+                    {t.fixedModal.workdayEndLabel}
                   </label>
                   <select
                     id="cap-end"
@@ -723,7 +715,7 @@ export const FixedActivityModal: React.FC<FixedActivityModalProps> = ({
 
                 <div>
                   <label htmlFor="cap-target" className="block text-xs font-medium text-zinc-700 mb-1">
-                    Daily Peak Threshold (h)
+                    {t.fixedModal.dailyPeakLabel}
                   </label>
                   <input
                     id="cap-target"

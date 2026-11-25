@@ -1,6 +1,8 @@
 {
-  "name": "Lean Personal Planner",
-  "description": "Minimalist Lean personal planning system uniting Kanban, Master Schedule, Heijunka, Work Breakdown Structure, and pull-based Weekly Work Plan.",
+  "name": "Organisation Nécessaire \u0026 Suffisante",
+  "description": "Système d\u0027organisation personnelle au plus juste, reposant sur le système du planning directeur, de la structure de découpage du projet et du plan de travail hebdomadaire.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

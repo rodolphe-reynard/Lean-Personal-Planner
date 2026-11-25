@@ -58,6 +58,7 @@ interface ScheduleRequestPayload {
   workdayEndMinutes: number;
   dailyTargetMinutes: number;
   userPreference?: string;
+  language?: "en" | "fr";
   tasks: ScheduleRequestTask[];
   steps: ScheduleRequestStep[];
   fixedActivities: ScheduleRequestFixed[];
@@ -98,19 +99,30 @@ async function startServer() {
         return res.status(400).json({ error: "Invalid scheduling payload." });
       }
 
-      const systemInstruction = `You are a Lean Production Weekly Scheduling Assistant.
-Your task is to generate an optimized, conflict-free weekly work schedule proposal for the 7-day Sat–Fri week provided.
+      const systemInstruction = `You are a Lean Production & Last Planner System (LPS) Weekly Scheduling Assistant.
+Your goal is to build a reliable, balanced, pull-based weekly work schedule for the 7-day Sat–Fri week provided.
 
-STRICT RULES YOU MUST FOLLOW:
+LEAN PRODUCTION & LAST PLANNER PRINCIPLES TO APPLY:
+- PULL SYSTEM (WILL → SHOULD → CAN): Always pull work in order of urgency and readiness. Objectives with milestones inside weekDays or already overdue are "WILL" (zero time buffer left) and have highest pull priority. Next pull ready "CAN" steps (unblocked personal steps with all upstream dependencies satisfied or scheduled earlier). Never push unready work whose prerequisites remain incomplete or blocked by "Others".
+- VALUE STREAM PRIORITY (VA > NNVA > NVA): Protect prime uninterrupted working blocks for Value-Added (VA) steps that directly advance deliverables. Batch or place Necessary Non-Value-Added (NNVA) steps concisely around handoffs, and keep Non-Value-Added (NVA) overhead minimal so high-value flow is never starved.
+- HEIJUNKA (WORKLOAD LEVELING): Eliminate Mura (unevenness) and Muri (overburden). Distribute working hours evenly across working days near or below dailyTargetMinutes (${payload.dailyTargetMinutes} min/day, including fixed activities where countsAsWorkingTime === true) rather than cramming work onto deadline days.
+- CONTINUOUS FLOW & WIP CONTROL ("Stop starting, start finishing"): Prioritize finishing already started / in-progress objectives and sequential WBS chains rather than opening many parallel objectives simultaneously. Schedule dependent chains smoothly with clean handoff buffers.
+- RELIABLE COMMITMENTS (PPC): Prefer realistic, doable time-boxed blocks sized to estimatedMinutes so the user can reliably hit 100% PPC and PPCO without overcommitting.
+
+STRICT TECHNICAL CONSTRAINTS:
 1. Only output dates present in weekDays (${payload.weekDays.join(", ")}).
 2. All times must use minutes from midnight (integer), snapped to 30-minute increments (e.g., 540 = 09:00, 570 = 09:30), within 420 (07:00) to 1320 (22:00). Prefer placing personal work inside the user's working window (${payload.workdayStartMinutes} to ${payload.workdayEndMinutes}) unless necessary.
 3. NEVER overlap any fixed activity (classes, meetings, lunch breaks, or non-working periods). Fixed activities are immutable.
 4. NEVER schedule steps whose completed === true.
-5. RESPONSIBILITY CONSTRAINT: Steps with responsibility === "Others" MUST NOT be scheduled into my personal calendar blocks unless the user already has a block for them in currentBlocks (if present in currentBlocks, preserve them or leave them to Others). Focus on scheduling incomplete steps assigned to "Me".
-6. DEPENDENCY CONSTRAINT: If step B lists step A in dependsOnStepIds (or A precedes B in the same task's sequence and B depends on A), step B MUST NOT be scheduled before step A's scheduled end time (date + startMinutes + durationMinutes) unless step A is already completed. If A is scheduled after B or unscheduled, do not schedule B before A; report any impossible dependency constraint in conflicts.
-7. PRIORITY & DEADLINES: Prioritize tasks where ANY milestone in deadlines[] (or primary deadline) falls within weekDays (WILL) or is overdue, then tasks with upcoming milestones. Balance daily workload near or below dailyTargetMinutes (${payload.dailyTargetMinutes} min/day, accounting for fixed activities where countsAsWorkingTime === true).
-8. MINIMAL DISRUPTION: Preserve existing valid blocks from currentBlocks whenever possible, only moving or adding blocks when needed to resolve conflicts, respect dependencies, or fit unscheduled high-priority steps. Do not invent stepIds or taskIds—only use exact IDs from the input.
-9. Detect and report any overloaded days, tight deadlines, blocked dependencies, or insufficient capacity in the conflicts array.`;
+5. RESPONSIBILITY CONSTRAINT: Steps with responsibility === "Others" MUST NOT be scheduled into personal calendar blocks unless the user already has a block for them in currentBlocks. Focus on scheduling incomplete steps assigned to "Me".
+6. DEPENDENCY CONSTRAINT: If step B lists step A in dependsOnStepIds, step B MUST NOT be scheduled before step A's scheduled end time (date + startMinutes + durationMinutes) unless step A is already completed. If A is unscheduled or scheduled later, do not schedule B before A; report any impossible dependency constraint in conflicts.
+7. DEADLINES & CAPACITY: Prioritize WILL objectives (any milestone in deadlines[] or primary deadline falling inside weekDays or overdue), then upcoming milestones, leveling total daily minutes smoothly against dailyTargetMinutes.
+8. MINIMAL DISRUPTION: Preserve valid blocks from currentBlocks whenever they align with Lean flow and priorities; only move or add blocks when needed to resolve conflicts, respect dependencies, level daily peaks (Heijunka), or fit unscheduled WILL steps. Never invent stepIds or taskIds—use exact input IDs only.
+9. Detect and report overloaded days, tight deadlines, blocked dependencies, or insufficient capacity in conflicts.${
+        payload.language === "fr"
+          ? '\n10. OUTPUT LANGUAGE: Write all human-readable strings ("summary", "conflicts[].message", and "proposedBlocks[].reason") in natural French. Keep JSON property names and "conflicts[].severity" values ("warning" or "error") in English.'
+          : ""
+      }`;
 
       const prompt = JSON.stringify(
         {

@@ -1,4 +1,4 @@
-export type ActiveTab = 'kanban' | 'master' | 'wbs' | 'heijunka' | 'weekly' | 'stats';
+export type ActiveTab = 'master' | 'wbs' | 'heijunka' | 'weekly' | 'stats';
 
 export type TaskStatus = 'todo' | 'in_progress' | 'completed';
 
@@ -121,6 +121,12 @@ export interface PPCSnapshot {
   plannedCount: number;
   completedCount: number;
   ppcPercent: number;
+  ppcoPercent?: number | null;
+  ppcoCompleted?: number;
+  ppcoTotal?: number;
+  clPercent?: number | null;
+  clCommitted?: number;
+  clShouldTotal?: number;
   completedItems: PPCItemSummary[];
   incompleteItems: PPCItemSummary[];
   locked: boolean;

@@ -1,8 +1,21 @@
 import { Task, TaskDeadline, TaskStatus } from '../types';
 
-const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const FULL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+export type DateLocale = 'en' | 'fr';
+
+const SHORT_MONTHS: Record<DateLocale, string[]> = {
+  en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+  fr: ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'],
+};
+
+const SHORT_DAYS: Record<DateLocale, string[]> = {
+  en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+  fr: ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'],
+};
+
+const FULL_DAYS: Record<DateLocale, string[]> = {
+  en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+  fr: ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'],
+};
 
 /**
  * Formats a local Date into YYYY-MM-DD without UTC conversion shifts.
@@ -96,14 +109,15 @@ export function getISOWeekNumber(dateStr: string): number {
   return Math.ceil(((dt.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
 
-export function formatWeekRange(weekStartStr: string): string {
+export function formatWeekRange(weekStartStr: string, lang: DateLocale = 'en'): string {
+  const months = SHORT_MONTHS[lang];
   const start = parseLocalDate(weekStartStr);
   const end = parseLocalDate(addDays(weekStartStr, 6));
 
   const sDay = start.getDate();
   const eDay = end.getDate();
-  const sMonth = SHORT_MONTHS[start.getMonth()];
-  const eMonth = SHORT_MONTHS[end.getMonth()];
+  const sMonth = months[start.getMonth()];
+  const eMonth = months[end.getMonth()];
   const sYear = start.getFullYear();
   const eYear = end.getFullYear();
 
@@ -116,24 +130,27 @@ export function formatWeekRange(weekStartStr: string): string {
   return `${sDay} – ${eDay} ${eMonth} ${eYear}`;
 }
 
-export function formatShortDate(dateStr: string): string {
+export function formatShortDate(dateStr: string, lang: DateLocale = 'en'): string {
   const dt = parseLocalDate(dateStr);
-  return `${dt.getDate()} ${SHORT_MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
+  return `${dt.getDate()} ${SHORT_MONTHS[lang][dt.getMonth()]} ${dt.getFullYear()}`;
 }
 
-export function formatCompactDate(dateStr: string): string {
+export function formatCompactDate(dateStr: string, lang: DateLocale = 'en'): string {
   const dt = parseLocalDate(dateStr);
-  return `${dt.getDate()} ${SHORT_MONTHS[dt.getMonth()]}`;
+  return `${dt.getDate()} ${SHORT_MONTHS[lang][dt.getMonth()]}`;
 }
 
-export function formatDayHeader(dateStr: string): { shortName: string; fullName: string; dayNum: number; monthShort: string } {
+export function formatDayHeader(
+  dateStr: string,
+  lang: DateLocale = 'en'
+): { shortName: string; fullName: string; dayNum: number; monthShort: string } {
   const dt = parseLocalDate(dateStr);
   const idx = dt.getDay(); // 0=Sun..6=Sat
   return {
-    shortName: SHORT_DAYS[idx],
-    fullName: FULL_DAYS[idx],
+    shortName: SHORT_DAYS[lang][idx],
+    fullName: FULL_DAYS[lang][idx],
     dayNum: dt.getDate(),
-    monthShort: SHORT_MONTHS[dt.getMonth()],
+    monthShort: SHORT_MONTHS[lang][dt.getMonth()],
   };
 }
 
@@ -179,14 +196,19 @@ export function isTaskOverdue(taskOrDeadline: Task | string, status: TaskStatus,
   return deadlines.some((d) => d.date < todayStr);
 }
 
-export function formatRelativeDeadline(deadlineStr: string, todayStr: string, status: TaskStatus): {
+export function formatRelativeDeadline(
+  deadlineStr: string,
+  todayStr: string,
+  status: TaskStatus,
+  lang: DateLocale = 'en'
+): {
   label: string;
   isOverdue: boolean;
   isDueToday: boolean;
   isDueSoon: boolean;
 } {
   if (status === 'completed') {
-    return { label: formatShortDate(deadlineStr), isOverdue: false, isDueToday: false, isDueSoon: false };
+    return { label: formatShortDate(deadlineStr, lang), isOverdue: false, isDueToday: false, isDueSoon: false };
   }
   const d1 = parseLocalDate(todayStr).getTime();
   const d2 = parseLocalDate(deadlineStr).getTime();
@@ -195,22 +217,42 @@ export function formatRelativeDeadline(deadlineStr: string, todayStr: string, st
   if (diffDays < 0) {
     const overdue = Math.abs(diffDays);
     return {
-      label: `${overdue}d overdue`,
+      label: lang === 'fr' ? `Retard ${overdue}j` : `${overdue}d overdue`,
       isOverdue: true,
       isDueToday: false,
       isDueSoon: false,
     };
   }
   if (diffDays === 0) {
-    return { label: 'Due today', isOverdue: false, isDueToday: true, isDueSoon: true };
+    return {
+      label: lang === 'fr' ? "Aujourd'hui" : 'Due today',
+      isOverdue: false,
+      isDueToday: true,
+      isDueSoon: true,
+    };
   }
   if (diffDays === 1) {
-    return { label: 'Due tomorrow', isOverdue: false, isDueToday: false, isDueSoon: true };
+    return {
+      label: lang === 'fr' ? 'Demain' : 'Due tomorrow',
+      isOverdue: false,
+      isDueToday: false,
+      isDueSoon: true,
+    };
   }
   if (diffDays <= 7) {
-    return { label: `In ${diffDays}d`, isOverdue: false, isDueToday: false, isDueSoon: true };
+    return {
+      label: lang === 'fr' ? `Dans ${diffDays}j` : `In ${diffDays}d`,
+      isOverdue: false,
+      isDueToday: false,
+      isDueSoon: true,
+    };
   }
-  return { label: `In ${diffDays}d`, isOverdue: false, isDueToday: false, isDueSoon: false };
+  return {
+    label: lang === 'fr' ? `Dans ${diffDays}j` : `In ${diffDays}d`,
+    isOverdue: false,
+    isDueToday: false,
+    isDueSoon: false,
+  };
 }
 
 export function formatMinutesToTime(minutesFromMidnight: number): string {

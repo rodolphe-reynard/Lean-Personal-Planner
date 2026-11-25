@@ -27,6 +27,7 @@ import { hasDependencyCycle } from '../utils/schedulingUtils';
 import { ConfirmModal } from './ConfirmModal';
 import { StepExecutionControl } from './StepExecutionControl';
 import { StepSplitModal } from './StepSplitModal';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface WBSTabProps {
   onNewTask: () => void;
@@ -58,6 +59,7 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
     reorderTaskSteps,
     updateTask,
   } = useAppState();
+  const { language, t } = useLanguage();
 
   const sortedTasks = useMemo(
     () => [...tasks].sort((a, b) => a.deadline.localeCompare(b.deadline)),
@@ -155,7 +157,7 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
         const curPos = pos.get(id)!;
         if (predPos !== undefined && predPos > curPos) {
           const pred = stepMap.get(predId);
-          return `Order locked: "${s.title}" depends on "${pred?.title ?? 'predecessor'}" and must remain after it in sequence.`;
+          return t.wbs.orderLockedError(s.title, pred?.title ?? t.wbs.predecessorFallback);
         }
       }
     }
@@ -167,7 +169,7 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
     if (!selectedTask) return;
     const trimmed = newStepTitle.trim();
     if (!trimmed) {
-      setStepInputError('Enter a step title before adding.');
+      setStepInputError(t.wbs.emptyStepError);
       return;
     }
     createStep({
@@ -249,7 +251,7 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
     }
 
     if (hasDependencyCycle(steps, step.id, predStepId)) {
-      setSequenceError('Cannot add dependency: circular dependency detected.');
+      setSequenceError(t.wbs.cycleError);
       return;
     }
 
@@ -285,10 +287,10 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
       <div className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-zinc-200">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900">
-            Work Breakdown Structure &amp; Phase Sequencing
+            {t.wbs.title}
           </h1>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Enforce step order, link predecessor dependencies, toggle In Progress flow status, and assign Me / Others responsibilities per step.
+            {t.wbs.subtitle}
           </p>
         </div>
         <button
@@ -297,15 +299,15 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
           className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-zinc-900 rounded-md hover:bg-zinc-800 transition-colors whitespace-nowrap shrink-0"
         >
           <Plus className="w-3.5 h-3.5" />
-          New Objective
+          {t.wbs.newObjective}
         </button>
       </div>
 
       {tasks.length === 0 ? (
         <div className="mt-8 bg-white border border-zinc-200 rounded-lg p-12 text-center">
-          <h2 className="text-base font-semibold text-zinc-900">No objectives available</h2>
+          <h2 className="text-base font-semibold text-zinc-900">{t.wbs.emptyTitle}</h2>
           <p className="text-sm text-zinc-500 mt-1 max-w-md mx-auto">
-            Create an objective in the Master Schedule (or right here) to break it down into sequential WBS steps.
+            {t.wbs.emptyDesc}
           </p>
           <button
             type="button"
@@ -313,14 +315,14 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
             className="mt-5 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-zinc-900 rounded-md hover:bg-zinc-800 transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
-            Create First Objective
+            {t.wbs.createFirst}
           </button>
         </div>
       ) : (
         <div className="mt-5 grid grid-cols-1 lg:grid-cols-[290px_1fr] gap-6 flex-1 min-h-0 items-start">
           <aside className="bg-white border border-zinc-200 rounded-lg overflow-hidden">
             <div className="px-4 py-3 border-b border-zinc-200 bg-zinc-50/80 flex items-center justify-between">
-              <h2 className="text-xs font-semibold text-zinc-700">Master Schedule Objectives</h2>
+              <h2 className="text-xs font-semibold text-zinc-700">{t.wbs.sidebarTitle}</h2>
               <span className="text-xs font-mono tabular-nums text-zinc-500">
                 {sortedTasks.length}
               </span>
@@ -330,7 +332,12 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                 const swatch = getTaskSwatch(task.colorId);
                 const isSelected = task.id === selectedTask?.id;
                 const counts = stepCountsByTask.get(task.id) ?? { total: 0, done: 0 };
-                const deadlineInfo = formatRelativeDeadline(task.deadline, todayStr, task.status);
+                const deadlineInfo = formatRelativeDeadline(
+                  task.deadline,
+                  todayStr,
+                  task.status,
+                  language
+                );
 
                 return (
                   <button
@@ -370,11 +377,11 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                               : 'text-zinc-500'
                           }
                         >
-                          {formatShortDate(task.deadline)}
+                          {formatShortDate(task.deadline, language)}
                         </span>
                         <span className="text-zinc-300" aria-hidden="true">·</span>
                         <span className="font-mono text-zinc-600">
-                          {counts.done}/{counts.total} steps
+                          {t.wbs.stepsRatio(counts.done, counts.total)}
                         </span>
                         <span className="text-zinc-300" aria-hidden="true">·</span>
                         <span
@@ -382,7 +389,7 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                             task.responsibility === 'Others' ? 'text-amber-700' : 'text-zinc-500'
                           }
                         >
-                          {task.responsibility}
+                          {t.common.responsibility[task.responsibility]}
                         </span>
                       </div>
                     </div>
@@ -400,7 +407,8 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                 const deadlineInfo = formatRelativeDeadline(
                   selectedTask.deadline,
                   todayStr,
-                  selectedTask.status
+                  selectedTask.status,
+                  language
                 );
                 return (
                   <div className="pb-5 border-b border-zinc-200">
@@ -429,27 +437,27 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                               }
                             >
                               {deadlines.length > 1
-                                ? `Deadlines: ${deadlines
+                                ? `${t.wbs.deadlinesLabel}: ${deadlines
                                     .map((d) =>
-                                      `${d.label ? `${d.label} ` : ''}${formatCompactDate(d.date)}`
+                                      `${d.label ? `${d.label} ` : ''}${formatCompactDate(d.date, language)}`
                                     )
                                     .join(', ')}`
-                                : `Deadline: ${formatShortDate(selectedTask.deadline)} (${deadlineInfo.label})`}
+                                : `${t.wbs.deadlineLabel}: ${formatShortDate(selectedTask.deadline, language)} (${deadlineInfo.label})`}
                             </span>
                             <span aria-hidden="true">·</span>
                             <span>
-                              Default owner:{' '}
+                              {t.wbs.defaultOwner}{' '}
                               <strong className="font-medium text-zinc-800">
-                                {selectedTask.responsibility}
+                                {t.common.responsibility[selectedTask.responsibility]}
                               </strong>
                             </span>
                             <span aria-hidden="true">·</span>
                             <span className="font-mono text-zinc-700">
-                              {completedStepsCount}/{taskSteps.length} completed
+                              {t.wbs.completedCount(completedStepsCount, taskSteps.length)}
                             </span>
                             <span aria-hidden="true">·</span>
                             <span className="font-mono text-zinc-700">
-                              {formatDuration(totalPlannedMinutes)} estimated
+                              {t.wbs.estimatedTotal(formatDuration(totalPlannedMinutes))}
                             </span>
                           </div>
                         </div>
@@ -462,7 +470,7 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                             onClick={() => updateTask(selectedTask.id, { status: 'completed' })}
                             className="px-3 py-1.5 text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 transition-colors whitespace-nowrap shrink-0"
                           >
-                            Mark Objective Completed
+                            {t.wbs.markCompleted}
                           </button>
                         )}
                         <button
@@ -471,7 +479,7 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-700 bg-white border border-zinc-300 rounded-md hover:bg-zinc-50 transition-colors whitespace-nowrap shrink-0"
                         >
                           <Pencil className="w-3.5 h-3.5" />
-                          Edit Objective
+                          {t.wbs.editObjective}
                         </button>
                       </div>
                     </div>
@@ -489,14 +497,14 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                       setNewStepTitle(e.target.value);
                       if (stepInputError) setStepInputError(null);
                     }}
-                    placeholder="Add next actionable step in sequence..."
-                    aria-label="New WBS step title"
+                    placeholder={t.wbs.addStepPlaceholder}
+                    aria-label={t.wbs.newStepTitleAria}
                     className="flex-1 min-w-[200px] px-3 py-2 text-sm text-zinc-900 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
                   />
                   <select
                     value={newStepMinutes}
                     onChange={(e) => setNewStepMinutes(Number(e.target.value))}
-                    aria-label="Estimated step duration"
+                    aria-label={t.wbs.estDurationAria}
                     className="px-2.5 py-2 text-xs font-mono text-zinc-800 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
                   >
                     {DURATION_OPTIONS.map((opt) => (
@@ -508,16 +516,16 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                   <select
                     value={newStepResponsibility}
                     onChange={(e) => setNewStepResponsibility(e.target.value as Responsibility)}
-                    aria-label="Step responsibility"
+                    aria-label={t.wbs.stepRespAria}
                     className="px-2.5 py-2 text-xs font-medium text-zinc-800 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
                   >
-                    <option value="Me">Me</option>
-                    <option value="Others">Others</option>
+                    <option value="Me">{t.common.responsibility.Me}</option>
+                    <option value="Others">{t.common.responsibility.Others}</option>
                   </select>
                   <select
                     value={newStepValueCat}
                     onChange={(e) => setNewStepValueCat(e.target.value as ValueCategory)}
-                    aria-label="Step Lean value classification"
+                    aria-label={t.wbs.stepLeanAria}
                     className="px-2.5 py-2 text-xs font-mono text-zinc-800 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
                   >
                     <option value="VA">VA</option>
@@ -529,7 +537,7 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                     className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-zinc-900 rounded-md hover:bg-zinc-800 transition-colors whitespace-nowrap shrink-0"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    Add Step
+                    {t.wbs.addStepBtn}
                   </button>
                 </div>
                 {stepInputError && (
@@ -547,7 +555,7 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                     type="button"
                     onClick={() => setSequenceError(null)}
                     className="p-0.5 text-amber-700 hover:text-amber-950"
-                    aria-label="Dismiss warning"
+                    aria-label={t.wbs.dismissWarning}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -557,9 +565,9 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
               <div className="mt-6">
                 {taskSteps.length === 0 ? (
                   <div className="py-10 px-6 border border-dashed border-zinc-300 rounded-md text-center">
-                    <p className="text-sm font-medium text-zinc-700">No steps defined yet</p>
+                    <p className="text-sm font-medium text-zinc-700">{t.wbs.noStepsTitle}</p>
                     <p className="text-xs text-zinc-500 mt-1">
-                      Add your first actionable step above to build the execution sequence for this objective.
+                      {t.wbs.noStepsDesc}
                     </p>
                   </div>
                 ) : (
@@ -645,14 +653,14 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                   borderColor: step.completed ? '#d4d4d8' : swatch.border,
                                   color: step.completed ? '#71717a' : swatch.text,
                                 }}
-                                title={`Phase Step ${index + 1}`}
+                                title={t.wbs.phaseStepTitle(index + 1)}
                               >
                                 {String(index + 1).padStart(2, '0')}
                               </div>
 
                               <div
                                 className="mt-2 text-zinc-300 hover:text-zinc-600 cursor-grab active:cursor-grabbing shrink-0"
-                                title="Drag to reorder step"
+                                title={t.wbs.dragReorderTitle}
                               >
                                 <GripVertical className="w-4 h-4" />
                               </div>
@@ -687,7 +695,7 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                       type="text"
                                       value={editNotes}
                                       onChange={(e) => setEditNotes(e.target.value)}
-                                      placeholder="Optional step notes..."
+                                      placeholder={t.wbs.stepNotesPlaceholder}
                                       className="w-full px-2.5 py-1 text-xs text-zinc-700 bg-white border border-zinc-300 rounded focus:outline-none focus:border-zinc-900"
                                     />
                                     <div className="flex items-center gap-2">
@@ -696,14 +704,14 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                         onClick={() => saveEditingStep(step.id)}
                                         className="px-2.5 py-1 text-xs font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800"
                                       >
-                                        Save
+                                        {t.common.save}
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => setEditingStepId(null)}
                                         className="px-2.5 py-1 text-xs font-medium text-zinc-600 hover:text-zinc-900"
                                       >
-                                        Cancel
+                                        {t.common.cancel}
                                       </button>
                                     </div>
                                   </div>
@@ -721,24 +729,24 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                     )}
                                     {step.executionState === 'done_variance' && step.varianceReason && (
                                       <p className="text-[11px] text-amber-800 mt-0.5">
-                                        Variance: {step.varianceReason}
+                                        {t.wbs.variancePrefix} {step.varianceReason}
                                       </p>
                                     )}
                                     <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] tabular-nums">
                                       <span className="font-mono text-zinc-500">
-                                        Est. {formatDuration(step.estimatedMinutes)}
+                                        {t.wbs.estPrefix} {formatDuration(step.estimatedMinutes)}
                                       </span>
                                       <span className="text-zinc-300" aria-hidden="true">·</span>
                                       {linkedBlocks.length === 0 ? (
-                                        <span className="text-zinc-400">Unscheduled</span>
+                                        <span className="text-zinc-400">{t.common.unscheduled}</span>
                                       ) : linkedBlocks.length === 1 ? (
                                         <span className="font-medium text-zinc-700 font-mono">
-                                          Scheduled · {formatShortDate(linkedBlocks[0].date)}{' '}
+                                          {t.wbs.scheduledPrefix} · {formatShortDate(linkedBlocks[0].date, language)}{' '}
                                           {formatMinutesToTime(linkedBlocks[0].startMinutes)}
                                         </span>
                                       ) : (
                                         <span className="font-medium text-zinc-700 font-mono">
-                                          Scheduled · {linkedBlocks.length} sessions
+                                          {t.wbs.scheduledPrefix} · {t.wbs.sessionsCount(linkedBlocks.length)}
                                         </span>
                                       )}
                                       {resolvedDeps.length > 0 && (
@@ -751,7 +759,7 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                                 : 'text-zinc-500'
                                             }
                                           >
-                                            After:{' '}
+                                            {t.wbs.afterPrefix}{' '}
                                             {resolvedDeps
                                               .map((d) =>
                                                 d.seqIdx !== undefined
@@ -776,8 +784,8 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                       onClick={() => toggleStepInProgress(step.id)}
                                       title={
                                         step.flowStatus === 'in_progress'
-                                          ? 'In Progress (click to revert to Not Started)'
-                                          : 'Not Started (click to mark In Progress for CFD)'
+                                          ? t.wbs.wipTooltip
+                                          : t.wbs.startTooltip
                                       }
                                       className={`inline-flex items-center gap-1 px-1.5 py-1 text-[10px] font-mono border rounded transition-colors ${
                                         step.flowStatus === 'in_progress'
@@ -786,13 +794,13 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                       }`}
                                     >
                                       <Play className="w-2.5 h-2.5" />
-                                      {step.flowStatus === 'in_progress' ? 'WIP' : 'Start'}
+                                      {step.flowStatus === 'in_progress' ? t.wbs.wipBtn : t.wbs.startBtn}
                                     </button>
                                   )}
 
                                   <select
                                     value={step.responsibility}
-                                    aria-label={`Owner for ${step.title}`}
+                                    aria-label={t.wbs.ownerAria(step.title)}
                                     onChange={(e) =>
                                       updateStep(step.id, {
                                         responsibility: e.target.value as Responsibility,
@@ -804,13 +812,13 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                         : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
                                     }`}
                                   >
-                                    <option value="Me">Me</option>
-                                    <option value="Others">Others</option>
+                                    <option value="Me">{t.common.responsibility.Me}</option>
+                                    <option value="Others">{t.common.responsibility.Others}</option>
                                   </select>
 
                                   <select
                                     value={step.valueCategory}
-                                    aria-label={`Lean value category for ${step.title}`}
+                                    aria-label={t.wbs.leanAria(step.title)}
                                     onChange={(e) =>
                                       updateStep(step.id, {
                                         valueCategory: e.target.value as ValueCategory,
@@ -825,7 +833,7 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
 
                                   <select
                                     value={step.estimatedMinutes}
-                                    aria-label={`Duration for ${step.title}`}
+                                    aria-label={t.wbs.durationAria(step.title)}
                                     onChange={(e) =>
                                       updateStep(step.id, {
                                         estimatedMinutes: Number(e.target.value),
@@ -847,8 +855,8 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                         prev === step.id ? null : step.id
                                       )
                                     }
-                                    title="Manage predecessor dependencies"
-                                    aria-label={`Dependencies for ${step.title}`}
+                                    title={t.wbs.manageDepsTitle}
+                                    aria-label={t.wbs.depsAria(step.title)}
                                     className={`p-1 rounded transition-colors ${
                                       isDepPickerOpen || step.dependsOnStepIds.length > 0
                                         ? 'text-zinc-900 bg-zinc-100'
@@ -861,8 +869,8 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                   <button
                                     type="button"
                                     onClick={() => setSplitTargetStep(step)}
-                                    title="Split into 2 smaller steps"
-                                    aria-label={`Split ${step.title}`}
+                                    title={t.wbs.splitStepTitle}
+                                    aria-label={t.wbs.splitAria(step.title)}
                                     className="p-1 text-zinc-400 hover:text-zinc-900 rounded"
                                   >
                                     <Scissors className="w-3.5 h-3.5" />
@@ -872,8 +880,8 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                     type="button"
                                     onClick={() => moveStepByOffset(step.id, -1)}
                                     disabled={index === 0}
-                                    title="Move step up"
-                                    aria-label="Move step up"
+                                    title={t.wbs.moveUpTitle}
+                                    aria-label={t.wbs.moveUpTitle}
                                     className="p-1 text-zinc-400 hover:text-zinc-900 disabled:opacity-25 disabled:pointer-events-none rounded"
                                   >
                                     <ArrowUp className="w-3.5 h-3.5" />
@@ -882,8 +890,8 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                     type="button"
                                     onClick={() => moveStepByOffset(step.id, 1)}
                                     disabled={index === taskSteps.length - 1}
-                                    title="Move step down"
-                                    aria-label="Move step down"
+                                    title={t.wbs.moveDownTitle}
+                                    aria-label={t.wbs.moveDownTitle}
                                     className="p-1 text-zinc-400 hover:text-zinc-900 disabled:opacity-25 disabled:pointer-events-none rounded"
                                   >
                                     <ArrowDown className="w-3.5 h-3.5" />
@@ -891,8 +899,8 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                   <button
                                     type="button"
                                     onClick={() => startEditingStep(step)}
-                                    title="Edit step"
-                                    aria-label={`Edit ${step.title}`}
+                                    title={t.wbs.editStepTitle}
+                                    aria-label={t.wbs.editStepAria(step.title)}
                                     className="p-1 text-zinc-400 hover:text-zinc-900 rounded"
                                   >
                                     <Pencil className="w-3.5 h-3.5" />
@@ -900,8 +908,8 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                   <button
                                     type="button"
                                     onClick={() => handleRequestDeleteStep(step)}
-                                    title="Delete step"
-                                    aria-label={`Delete ${step.title}`}
+                                    title={t.wbs.deleteStepTitle}
+                                    aria-label={t.wbs.deleteStepAria(step.title)}
                                     className="p-1 text-zinc-400 hover:text-red-700 rounded"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -914,19 +922,19 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                               <div className="mt-3 ml-11 pt-2.5 border-t border-zinc-100">
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="text-[11px] font-semibold text-zinc-700">
-                                    Predecessor Steps (must finish before this step can be scheduled):
+                                    {t.wbs.predecessorsLabel}
                                   </span>
                                   <button
                                     type="button"
                                     onClick={() => setDepPickerStepId(null)}
                                     className="text-[11px] text-zinc-500 hover:text-zinc-900"
                                   >
-                                    Done
+                                    {t.wbs.doneBtn}
                                   </button>
                                 </div>
                                 {taskSteps.length <= 1 ? (
                                   <p className="text-[11px] text-zinc-400">
-                                    Add more steps to define dependencies between them.
+                                    {t.wbs.addMoreDeps}
                                   </p>
                                 ) : (
                                   <div className="flex flex-wrap gap-1.5">
@@ -945,8 +953,8 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
                                             onClick={() => handleToggleDependency(step, cand.id)}
                                             title={
                                               wouldCycle
-                                                ? 'Would create a circular dependency'
-                                                : `Toggle dependency on ${cand.title}`
+                                                ? t.wbs.cycleTooltip
+                                                : t.wbs.toggleDepTooltip(cand.title)
                                             }
                                             className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded border transition-colors ${
                                               isSelected
@@ -989,13 +997,16 @@ export const WBSTab: React.FC<WBSTabProps> = ({ onNewTask, onEditTask }) => {
 
       <ConfirmModal
         isOpen={Boolean(stepToDelete)}
-        title="Delete Scheduled Step?"
+        title={t.wbs.deleteModalTitle}
         message={
           stepToDelete
-            ? `Delete "${stepToDelete.title}"? This step is currently scheduled ${(blocksByStep.get(stepToDelete.id) ?? []).length} time(s) on your Weekly Work Plan, which will also be removed.`
+            ? t.wbs.deleteModalMessage(
+                stepToDelete.title,
+                (blocksByStep.get(stepToDelete.id) ?? []).length
+              )
             : ''
         }
-        confirmLabel="Delete Step"
+        confirmLabel={t.wbs.deleteModalConfirm}
         destructive
         onCancel={() => setStepToDelete(null)}
         onConfirm={() => {

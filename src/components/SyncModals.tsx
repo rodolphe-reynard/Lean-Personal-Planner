@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { AlertTriangle, Cloud, GitMerge, HardDrive, Loader2, Upload } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext';
+import { useLanguage } from '../i18n/LanguageContext';
 
 export const SyncModals: React.FC = () => {
   const { pendingMigration, syncConflicts, resolveMigration, resolveConflict } = useAppState();
+  const { t, language } = useLanguage();
   const [migratingStrategy, setMigratingStrategy] = useState<string | null>(null);
 
   const handleMigration = async (strategy: 'merge' | 'replace_cloud' | 'keep_cloud') => {
@@ -30,14 +32,14 @@ export const SyncModals: React.FC = () => {
               <Cloud className="w-5 h-5 text-zinc-800 shrink-0 mt-0.5" />
               <div>
                 <h2 id="migration-preview-title" className="text-base font-semibold text-zinc-900">
-                  Reconcile Local & Cloud Workspace
+                  {t.syncModals.reconcileTitle}
                 </h2>
                 <p className="text-xs text-zinc-500 mt-0.5">
-                  Signed in as{' '}
+                  {t.syncModals.reconcileDescPrefix}{' '}
                   <span className="font-medium text-zinc-800">
                     {pendingMigration.user.email || pendingMigration.user.displayName}
                   </span>
-                  . Choose how to reconcile this browser&apos;s data with Cloud Firestore.
+                  . {t.syncModals.reconcileDescSuffix}
                 </p>
               </div>
             </div>
@@ -47,40 +49,40 @@ export const SyncModals: React.FC = () => {
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-zinc-50 border-b border-zinc-200 text-zinc-500">
-                    <th className="py-2 px-3 font-medium">Data Collection</th>
-                    <th className="py-2 px-3 font-mono text-right">This Browser</th>
-                    <th className="py-2 px-3 font-mono text-right">Cloud Account</th>
+                    <th className="py-2 px-3 font-medium">{t.syncModals.colCollection}</th>
+                    <th className="py-2 px-3 font-mono text-right">{t.syncModals.colBrowser}</th>
+                    <th className="py-2 px-3 font-mono text-right">{t.syncModals.colCloud}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200/80 tabular-nums">
                   {[
                     {
-                      label: 'Master Schedule Objectives',
+                      label: t.syncModals.rows.tasks,
                       local: pendingMigration.localCounts.tasks,
                       cloud: pendingMigration.cloudCounts.tasks,
                     },
                     {
-                      label: 'WBS Steps',
+                      label: t.syncModals.rows.steps,
                       local: pendingMigration.localCounts.steps,
                       cloud: pendingMigration.cloudCounts.steps,
                     },
                     {
-                      label: 'Weekly Scheduled Blocks',
+                      label: t.syncModals.rows.scheduledBlocks,
                       local: pendingMigration.localCounts.scheduledBlocks,
                       cloud: pendingMigration.cloudCounts.scheduledBlocks,
                     },
                     {
-                      label: 'Fixed Activities',
+                      label: t.syncModals.rows.fixedActivities,
                       local: pendingMigration.localCounts.fixedActivities,
                       cloud: pendingMigration.cloudCounts.fixedActivities,
                     },
                     {
-                      label: 'Historical PPC Weeks',
+                      label: t.syncModals.rows.ppcRecords,
                       local: pendingMigration.localCounts.ppcRecords,
                       cloud: pendingMigration.cloudCounts.ppcRecords,
                     },
                     {
-                      label: 'CFD History Days',
+                      label: t.syncModals.rows.cfdSnapshots,
                       local: pendingMigration.localCounts.cfdSnapshots,
                       cloud: pendingMigration.cloudCounts.cfdSnapshots,
                     },
@@ -113,10 +115,10 @@ export const SyncModals: React.FC = () => {
                 )}
                 <div>
                   <div className="text-xs font-semibold">
-                    Merge Local & Cloud (Recommended)
+                    {t.syncModals.mergeTitle}
                   </div>
                   <div className="text-[11px] text-zinc-300 mt-0.5">
-                    Combines objectives, steps, schedules, and locked history from both sources, keeping the newest edits where IDs match.
+                    {t.syncModals.mergeDesc}
                   </div>
                 </div>
               </button>
@@ -134,10 +136,10 @@ export const SyncModals: React.FC = () => {
                 )}
                 <div>
                   <div className="text-xs font-semibold">
-                    Upload Local Workspace & Replace Cloud
+                    {t.syncModals.replaceCloudTitle}
                   </div>
                   <div className="text-[11px] text-zinc-500 mt-0.5">
-                    Pushes this browser&apos;s current plan as your cloud source of truth.
+                    {t.syncModals.replaceCloudDesc}
                   </div>
                 </div>
               </button>
@@ -155,10 +157,10 @@ export const SyncModals: React.FC = () => {
                 )}
                 <div>
                   <div className="text-xs font-semibold">
-                    Keep Cloud Workspace (Discard Local Changes)
+                    {t.syncModals.keepCloudTitle}
                   </div>
                   <div className="text-[11px] text-zinc-500 mt-0.5">
-                    Loads your synced cloud workspace onto this device cleanly.
+                    {t.syncModals.keepCloudDesc}
                   </div>
                 </div>
               </button>
@@ -178,40 +180,47 @@ export const SyncModals: React.FC = () => {
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div>
               <h3 id="sync-conflict-title" className="text-xs font-semibold text-zinc-900">
-                Simultaneous Multi-Device Edit Detected ({syncConflicts.length})
+                {t.syncModals.conflictTitle(syncConflicts.length)}
               </h3>
               <p className="text-[11px] text-zinc-500 mt-0.5">
-                Another signed-in device updated an item you just edited. Choose which version to keep.
+                {t.syncModals.conflictDesc}
               </p>
             </div>
           </div>
 
           <div className="space-y-2 max-h-56 overflow-y-auto">
-            {syncConflicts.map((c) => (
-              <div key={c.id} className="p-2.5 bg-zinc-50 border border-zinc-200 rounded-md space-y-2">
-                <div className="text-xs font-medium text-zinc-900">{c.label}</div>
-                <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500 font-mono">
-                  <span>Local: {new Date(c.localUpdatedAt).toLocaleTimeString()}</span>
-                  <span>Cloud: {new Date(c.remoteUpdatedAt).toLocaleTimeString()}</span>
+            {syncConflicts.map((c) => {
+              const locale = language === 'fr' ? 'fr-FR' : 'en-US';
+              return (
+                <div key={c.id} className="p-2.5 bg-zinc-50 border border-zinc-200 rounded-md space-y-2">
+                  <div className="text-xs font-medium text-zinc-900">{c.label}</div>
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500 font-mono">
+                    <span>
+                      {t.syncModals.localLabel(new Date(c.localUpdatedAt).toLocaleTimeString(locale))}
+                    </span>
+                    <span>
+                      {t.syncModals.cloudLabel(new Date(c.remoteUpdatedAt).toLocaleTimeString(locale))}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => resolveConflict(c.id, 'local')}
+                      className="flex-1 px-2.5 py-1 text-[11px] font-medium bg-zinc-900 text-white rounded hover:bg-zinc-800"
+                    >
+                      {t.syncModals.keepLocal}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => resolveConflict(c.id, 'remote')}
+                      className="flex-1 px-2.5 py-1 text-[11px] font-medium bg-white text-zinc-800 border border-zinc-300 rounded hover:bg-zinc-100"
+                    >
+                      {t.syncModals.useCloud}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => resolveConflict(c.id, 'local')}
-                    className="flex-1 px-2.5 py-1 text-[11px] font-medium bg-zinc-900 text-white rounded hover:bg-zinc-800"
-                  >
-                    Keep Local
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => resolveConflict(c.id, 'remote')}
-                    className="flex-1 px-2.5 py-1 text-[11px] font-medium bg-white text-zinc-800 border border-zinc-300 rounded hover:bg-zinc-100"
-                  >
-                    Use Cloud
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

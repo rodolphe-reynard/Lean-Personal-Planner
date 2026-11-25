@@ -15,6 +15,7 @@ import {
 import { useAppState } from '../context/AppStateContext';
 import { PersistedWorkspace, validateImportPayload } from '../storage/db';
 import { ConfirmModal } from './ConfirmModal';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface BackupModalProps {
   isOpen: boolean;
@@ -38,6 +39,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
     loadSampleData,
     clearAllData,
   } = useAppState();
+  const { t } = useLanguage();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -71,9 +73,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
       await signInWithGoogle();
       onClose();
     } catch (err) {
-      setImportError(
-        err instanceof Error ? err.message : 'Unable to complete Google Sign-In.'
-      );
+      setImportError(err instanceof Error ? err.message : t.backupModal.errSignIn);
     } finally {
       setAuthBusy(false);
     }
@@ -84,9 +84,9 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
     setAuthBusy(true);
     try {
       await signOutUser();
-      setImportSuccess('Signed out. Local IndexedDB workspace remains active on this device.');
+      setImportSuccess(t.backupModal.msgSignedOut);
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Unable to sign out.');
+      setImportError(err instanceof Error ? err.message : t.backupModal.errSignOut);
     } finally {
       setAuthBusy(false);
     }
@@ -104,7 +104,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     setImportError(null);
-    setImportSuccess('Backup file exported successfully.');
+    setImportSuccess(t.backupModal.msgExported);
   };
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,20 +124,11 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
       }
       setPendingImport({ fileName: file.name, data: validation.data });
     } catch {
-      setImportError('Unable to parse file. Please select a valid JSON backup exported from this application.');
+      setImportError(t.backupModal.msgInvalidFile);
     }
   };
 
-  const syncLabel =
-    syncStatus === 'synced'
-      ? 'Cloud Synced'
-      : syncStatus === 'syncing'
-      ? 'Syncing…'
-      : syncStatus === 'offline'
-      ? 'Offline Queue (IndexedDB Cache)'
-      : syncStatus === 'error'
-      ? 'Sync Error'
-      : 'Local Only';
+  const syncLabel = t.backupModal.syncLabels[syncStatus];
 
   return (
     <>
@@ -155,17 +146,17 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
           <div className="flex items-center justify-between gap-4 pb-4 border-b border-zinc-200">
             <div>
               <h2 id="backup-modal-title" className="text-base font-semibold text-zinc-900">
-                Account, Cloud Sync &amp; Backup
+                {t.backupModal.title}
               </h2>
               <p className="text-xs text-zinc-500 mt-0.5 tabular-nums">
-                {tasks.length} objectives · {steps.length} steps · {scheduledBlocks.length} scheduled blocks
+                {t.backupModal.statsSummary(tasks.length, steps.length, scheduledBlocks.length)}
               </p>
             </div>
             <button
               type="button"
               onClick={onClose}
               className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-md transition-colors"
-              aria-label="Close modal"
+              aria-label={t.common.closeModal}
             >
               <X className="w-4 h-4" />
             </button>
@@ -198,12 +189,14 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
                   )}
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-zinc-900">
-                      {user ? user.displayName || user.email || 'Signed-in Account' : 'Cloud Firestore Sync'}
+                      {user
+                        ? user.displayName || user.email || t.backupModal.signedInFallback
+                        : t.backupModal.cloudSyncTitle}
                     </div>
                     <div className="text-xs text-zinc-500 truncate">
                       {user
                         ? `${user.email ?? ''} · ${syncLabel}`
-                        : 'Sign in with Google to synchronise your Lean plan across devices.'}
+                        : t.backupModal.signInPrompt}
                     </div>
                   </div>
                 </div>
@@ -211,7 +204,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
                 {user && user.photoURL && (
                   <img
                     src={user.photoURL}
-                    alt={user.displayName || 'Account'}
+                    alt={user.displayName || t.nav.accountFallback}
                     className="w-8 h-8 rounded-full border border-zinc-300 shrink-0"
                     referrerPolicy="no-referrer"
                   />
@@ -230,7 +223,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-800 bg-white border border-zinc-300 rounded-md hover:bg-zinc-100 disabled:opacity-60"
                   >
                     <GitMerge className="w-3.5 h-3.5" />
-                    Reconcile Local &amp; Cloud
+                    {t.backupModal.reconcileBtn}
                   </button>
 
                   <button
@@ -244,7 +237,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
                     ) : (
                       <LogOut className="w-3.5 h-3.5" />
                     )}
-                    Sign Out
+                    {t.backupModal.signOutBtn}
                   </button>
                 </div>
               ) : (
@@ -259,7 +252,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
                   ) : (
                     <LogIn className="w-3.5 h-3.5" />
                   )}
-                  Sign in with Google
+                  {t.backupModal.signInBtn}
                 </button>
               )}
             </div>
@@ -267,9 +260,9 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
             {/* Export JSON */}
             <div className="border border-zinc-200 rounded-md p-4 flex items-center justify-between gap-4">
               <div>
-                <h3 className="text-sm font-medium text-zinc-900">Export JSON Backup</h3>
+                <h3 className="text-sm font-medium text-zinc-900">{t.backupModal.exportTitle}</h3>
                 <p className="text-xs text-zinc-500 mt-0.5">
-                  Download objectives, WBS steps, milestones, fixed blocks, and archived history.
+                  {t.backupModal.exportDesc}
                 </p>
               </div>
               <button
@@ -278,16 +271,16 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
                 className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-zinc-800 bg-white border border-zinc-300 rounded-md hover:bg-zinc-50 transition-colors whitespace-nowrap shrink-0"
               >
                 <Download className="w-3.5 h-3.5" />
-                Export JSON
+                {t.backupModal.exportBtn}
               </button>
             </div>
 
             {/* Restore JSON */}
             <div className="border border-zinc-200 rounded-md p-4 flex items-center justify-between gap-4">
               <div>
-                <h3 className="text-sm font-medium text-zinc-900">Restore from JSON</h3>
+                <h3 className="text-sm font-medium text-zinc-900">{t.backupModal.restoreTitle}</h3>
                 <p className="text-xs text-zinc-500 mt-0.5">
-                  Validate a backup file and replace current workspace data.
+                  {t.backupModal.restoreDesc}
                 </p>
               </div>
               <input
@@ -303,7 +296,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
                 className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-zinc-800 bg-white border border-zinc-300 rounded-md hover:bg-zinc-50 transition-colors whitespace-nowrap shrink-0"
               >
                 <Upload className="w-3.5 h-3.5" />
-                Import JSON
+                {t.backupModal.importBtn}
               </button>
             </div>
 
@@ -314,7 +307,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                Reset to Sample Plan
+                {t.backupModal.resetSampleBtn}
               </button>
               <button
                 type="button"
@@ -322,7 +315,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                Clear Workspace
+                {t.backupModal.clearWorkspaceBtn}
               </button>
             </div>
           </div>
@@ -331,19 +324,26 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
 
       <ConfirmModal
         isOpen={Boolean(pendingImport)}
-        title="Overwrite Existing Data?"
+        title={t.backupModal.overwriteTitle}
         message={
           pendingImport
-            ? `Importing "${pendingImport.fileName}" (${pendingImport.data.tasks.length} objectives, ${pendingImport.data.steps.length} steps, ${pendingImport.data.scheduledBlocks.length} scheduled blocks) will replace all current workspace data. This cannot be undone.`
+            ? t.backupModal.overwriteMsg(
+                pendingImport.fileName,
+                pendingImport.data.tasks.length,
+                pendingImport.data.steps.length,
+                pendingImport.data.scheduledBlocks.length
+              )
             : ''
         }
-        confirmLabel="Replace Workspace"
+        confirmLabel={t.backupModal.overwriteBtn}
         destructive
         onCancel={() => setPendingImport(null)}
         onConfirm={() => {
           if (pendingImport) {
             replaceWorkspace(pendingImport.data);
-            setImportSuccess(`Restored ${pendingImport.data.tasks.length} objectives from "${pendingImport.fileName}".`);
+            setImportSuccess(
+              t.backupModal.msgRestored(pendingImport.data.tasks.length, pendingImport.fileName)
+            );
             setPendingImport(null);
           }
         }}
@@ -351,29 +351,29 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
 
       <ConfirmModal
         isOpen={confirmAction === 'clear'}
-        title="Clear Entire Workspace?"
-        message="This will permanently delete all objectives, WBS steps, and scheduled blocks from browser storage (and cloud if signed in)."
-        confirmLabel="Clear Everything"
+        title={t.backupModal.clearTitle}
+        message={t.backupModal.clearMsg}
+        confirmLabel={t.backupModal.clearBtn}
         destructive
         onCancel={() => setConfirmAction(null)}
         onConfirm={() => {
           clearAllData();
           setConfirmAction(null);
-          setImportSuccess('Workspace cleared.');
+          setImportSuccess(t.backupModal.msgCleared);
         }}
       />
 
       <ConfirmModal
         isOpen={confirmAction === 'sample'}
-        title="Reset to Sample Plan?"
-        message="This will replace your current workspace with the default sample Lean plan anchored to the current week."
-        confirmLabel="Load Sample Plan"
+        title={t.backupModal.sampleTitle}
+        message={t.backupModal.sampleMsg}
+        confirmLabel={t.backupModal.sampleBtn}
         destructive
         onCancel={() => setConfirmAction(null)}
         onConfirm={() => {
           loadSampleData();
           setConfirmAction(null);
-          setImportSuccess('Sample plan loaded for the current week.');
+          setImportSuccess(t.backupModal.msgSampleLoaded);
         }}
       />
     </>

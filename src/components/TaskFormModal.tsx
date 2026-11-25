@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Calendar, Plus, Trash2, X } from 'lucide-react';
 import { Responsibility, Task, TaskDeadline, TaskStatus, ValueCategory } from '../types';
-import { PASTEL_PALETTE, pickNextAvailableColorId } from '../utils/colors';
+import { PASTEL_PALETTE, getSwatchLabel, pickNextAvailableColorId } from '../utils/colors';
 import { useAppState } from '../context/AppStateContext';
 import { getPrimaryDeadline, getTaskDeadlines, isValidDateString } from '../utils/dateUtils';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface TaskFormModalProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
   onClose,
 }) => {
   const { tasks, todayStr, createTask, updateTask } = useAppState();
+  const { t, language } = useLanguage();
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -38,7 +40,13 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
       setDeadlines(
         list.length > 0
           ? list.map((d) => ({ ...d }))
-          : [{ id: `dl-${Date.now()}`, date: editingTask.deadline || todayStr, label: 'Target' }]
+          : [
+              {
+                id: `dl-${Date.now()}`,
+                date: editingTask.deadline || todayStr,
+                label: t.taskModal.defaultTargetLabel,
+              },
+            ]
       );
       setStatus(editingTask.status);
       setResponsibility(editingTask.responsibility);
@@ -47,14 +55,16 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
     } else {
       setName('');
       setDescription('');
-      setDeadlines([{ id: `dl-${Date.now()}`, date: todayStr, label: 'Target' }]);
+      setDeadlines([
+        { id: `dl-${Date.now()}`, date: todayStr, label: t.taskModal.defaultTargetLabel },
+      ]);
       setStatus(defaultStatus);
       setResponsibility('Me');
       setValueCategory('VA');
       setColorId(pickNextAvailableColorId(tasks.map((t) => t.colorId)));
     }
     setError(null);
-  }, [isOpen, editingTask, defaultStatus, todayStr, tasks]);
+  }, [isOpen, editingTask, defaultStatus, todayStr, tasks, t.taskModal.defaultTargetLabel]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -75,7 +85,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
       {
         id: `dl-${Date.now()}-${prev.length + 1}`,
         date: lastDate,
-        label: `Milestone ${prev.length + 1}`,
+        label: t.taskModal.defaultMilestoneLabel(prev.length + 1),
       },
     ]);
   };
@@ -93,11 +103,11 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) {
-      setError('Please enter an objective name.');
+      setError(t.taskModal.errNoName);
       return;
     }
     if (deadlines.length === 0 || deadlines.some((d) => !isValidDateString(d.date))) {
-      setError('Please ensure every deadline milestone has a valid date.');
+      setError(t.taskModal.errInvalidDate);
       return;
     }
 
@@ -150,13 +160,13 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
       >
         <div className="px-6 py-4 flex items-center justify-between gap-4 border-b border-zinc-200 shrink-0">
           <h2 id="task-form-title" className="text-base font-semibold text-zinc-900">
-            {editingTask ? 'Edit Objective' : 'New Objective'}
+            {editingTask ? t.taskModal.editTitle : t.taskModal.newTitle}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-zinc-900"
-            aria-label="Close modal"
+            aria-label={t.common.closeModal}
           >
             <X className="w-4 h-4" />
           </button>
@@ -171,14 +181,14 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
 
           <div>
             <label htmlFor="task-name" className="block text-xs font-medium text-zinc-700 mb-1.5">
-              Objective Name
+              {t.taskModal.nameLabel}
             </label>
             <input
               id="task-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Launch Q1 Product Documentation"
+              placeholder={t.taskModal.namePlaceholder}
               autoFocus
               className="w-full px-3 py-2 text-sm text-zinc-900 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
             />
@@ -186,14 +196,14 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
 
           <div>
             <label htmlFor="task-description" className="block text-xs font-medium text-zinc-700 mb-1.5">
-              Description (Optional)
+              {t.taskModal.descLabel}
             </label>
             <textarea
               id="task-description"
               rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Scope, success criteria, or key deliverables..."
+              placeholder={t.taskModal.descPlaceholder}
               className="w-full px-3 py-2 text-sm text-zinc-900 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900 resize-none"
             />
           </div>
@@ -203,7 +213,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-zinc-800 flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-zinc-500" />
-                Deadlines &amp; Milestones ({deadlines.length})
+                {t.taskModal.deadlinesHeading(deadlines.length)}
               </span>
               <button
                 type="button"
@@ -211,7 +221,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                 className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-800 hover:text-zinc-950 bg-white border border-zinc-300 px-2 py-1 rounded"
               >
                 <Plus className="w-3 h-3" />
-                Add Deadline
+                {t.taskModal.addDeadline}
               </button>
             </div>
 
@@ -221,7 +231,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                   <input
                     type="date"
                     value={dl.date}
-                    aria-label={`Milestone ${idx + 1} date`}
+                    aria-label={t.taskModal.milestoneDateAria(idx + 1)}
                     onChange={(e) => handleUpdateDeadline(dl.id, { date: e.target.value })}
                     className="w-36 px-2.5 py-1.5 text-xs font-mono tabular-nums text-zinc-900 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
                   />
@@ -229,8 +239,12 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                     type="text"
                     value={dl.label ?? ''}
                     maxLength={48}
-                    placeholder={idx === 0 ? 'Milestone label (e.g. Draft)' : 'Milestone label'}
-                    aria-label={`Milestone ${idx + 1} label`}
+                    placeholder={
+                      idx === 0
+                        ? t.taskModal.milestoneFirstPlaceholder
+                        : t.taskModal.milestonePlaceholder
+                    }
+                    aria-label={t.taskModal.milestoneLabelAria(idx + 1)}
                     onChange={(e) => handleUpdateDeadline(dl.id, { label: e.target.value })}
                     className="flex-1 min-w-0 px-2.5 py-1.5 text-xs text-zinc-900 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
                   />
@@ -238,8 +252,8 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                     <button
                       type="button"
                       onClick={() => handleRemoveDeadline(dl.id)}
-                      title="Remove milestone"
-                      aria-label={`Remove milestone ${idx + 1}`}
+                      title={t.taskModal.removeMilestoneTitle}
+                      aria-label={t.taskModal.removeMilestoneAria(idx + 1)}
                       className="p-1.5 text-zinc-400 hover:text-red-600 rounded"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -249,14 +263,14 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
               ))}
             </div>
             <p className="text-[11px] text-zinc-500">
-              All milestones render as colored dashed lines on your Weekly Work Plan; tasks with any milestone inside a week receive the WILL label.
+              {t.taskModal.deadlinesHint}
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="task-status" className="block text-xs font-medium text-zinc-700 mb-1.5">
-                Status
+                {t.taskModal.statusLabel}
               </label>
               <select
                 id="task-status"
@@ -264,15 +278,15 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                 onChange={(e) => setStatus(e.target.value as TaskStatus)}
                 className="w-full px-3 py-2 text-sm text-zinc-900 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
               >
-                <option value="todo">To Do</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
+                <option value="todo">{t.common.status.todo}</option>
+                <option value="in_progress">{t.common.status.in_progress}</option>
+                <option value="completed">{t.common.status.completed}</option>
               </select>
             </div>
 
             <div>
               <label htmlFor="task-value-category" className="block text-xs font-medium text-zinc-700 mb-1.5">
-                Lean Value Classification
+                {t.taskModal.leanLabel}
               </label>
               <select
                 id="task-value-category"
@@ -280,16 +294,16 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                 onChange={(e) => setValueCategory(e.target.value as ValueCategory)}
                 className="w-full px-3 py-2 text-sm text-zinc-900 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
               >
-                <option value="VA">VA · Value-Added</option>
-                <option value="NNVA">NNVA · Necessary Non-VA</option>
-                <option value="NVA">NVA · Non-Value-Added</option>
+                <option value="VA">{t.taskModal.vaOption}</option>
+                <option value="NNVA">{t.taskModal.nnvaOption}</option>
+                <option value="NVA">{t.taskModal.nvaOption}</option>
               </select>
             </div>
           </div>
 
           <div>
             <span className="block text-xs font-medium text-zinc-700 mb-1.5">
-              Default Responsibility
+              {t.taskModal.respLabel}
             </span>
             <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-100 rounded-md border border-zinc-200 max-w-xs">
               {(['Me', 'Others'] as Responsibility[]).map((owner) => (
@@ -303,7 +317,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                       : 'text-zinc-600 hover:text-zinc-900'
                   }`}
                 >
-                  {owner}
+                  {t.common.responsibility[owner]}
                 </button>
               ))}
             </div>
@@ -311,18 +325,19 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
 
           <div>
             <span className="block text-xs font-medium text-zinc-700 mb-2">
-              Task Color Identifier
+              {t.taskModal.colorLabel}
             </span>
             <div className="flex flex-wrap gap-2">
               {PASTEL_PALETTE.map((swatch) => {
                 const selected = swatch.id === colorId;
+                const swatchLabel = getSwatchLabel(swatch, language);
                 return (
                   <button
                     key={swatch.id}
                     type="button"
                     onClick={() => setColorId(swatch.id)}
-                    title={swatch.label}
-                    aria-label={`Color ${swatch.label}`}
+                    title={swatchLabel}
+                    aria-label={t.taskModal.colorAria(swatchLabel)}
                     aria-pressed={selected}
                     className={`w-7 h-7 rounded-md border transition-transform flex items-center justify-center focus-visible:outline-2 focus-visible:outline-zinc-900 ${
                       selected ? 'ring-2 ring-zinc-900 ring-offset-1 scale-105' : 'hover:scale-105'
@@ -348,13 +363,13 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
               onClick={onClose}
               className="px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-300 rounded-md hover:bg-zinc-50 transition-colors whitespace-nowrap shrink-0"
             >
-              Cancel
+              {t.common.cancel}
             </button>
             <button
               type="submit"
               className="px-4 py-2 text-sm font-medium text-white bg-zinc-900 rounded-md hover:bg-zinc-800 transition-colors whitespace-nowrap shrink-0"
             >
-              {editingTask ? 'Save Changes' : 'Create Objective'}
+              {editingTask ? t.taskModal.saveChanges : t.taskModal.createObjective}
             </button>
           </div>
         </form>

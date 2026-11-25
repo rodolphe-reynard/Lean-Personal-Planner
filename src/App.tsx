@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Cloud, CloudOff, Database, Loader2 } from 'lucide-react';
+import { Cloud, CloudOff, Database, Languages, Loader2 } from 'lucide-react';
 import { AppStateProvider, useAppState } from './context/AppStateContext';
+import { LanguageProvider, useLanguage } from './i18n/LanguageContext';
 import { ActiveTab, Task, TaskStatus } from './types';
-import { KanbanTab } from './components/KanbanTab';
 import { MasterScheduleTab } from './components/MasterScheduleTab';
 import { WBSTab } from './components/WBSTab';
 import { HeijunkaTab } from './components/HeijunkaTab';
@@ -13,17 +13,11 @@ import { BackupModal } from './components/BackupModal';
 import { SyncModals } from './components/SyncModals';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-const TABS: { id: ActiveTab; label: string }[] = [
-  { id: 'kanban', label: 'Kanban Board' },
-  { id: 'master', label: 'Master Schedule' },
-  { id: 'wbs', label: 'WBS & Phases' },
-  { id: 'heijunka', label: 'Heijunka' },
-  { id: 'weekly', label: 'Weekly Work Plan' },
-  { id: 'stats', label: 'Statistics' },
-];
+const TAB_IDS: ActiveTab[] = ['master', 'wbs', 'heijunka', 'weekly', 'stats'];
 
 const PlannerShell: React.FC = () => {
   const { isLoading, storageError, activeTab, setActiveTab, user, syncStatus } = useAppState();
+  const { t, toggleLanguage } = useLanguage();
 
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -52,16 +46,16 @@ const PlannerShell: React.FC = () => {
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-6">
           {/* Primary Navigation Tabs (Heijunka placed directly before Weekly Work Plan) */}
           <nav
-            aria-label="Primary sections"
+            aria-label={t.nav.primaryAria}
             className="flex items-center gap-1 sm:gap-6 overflow-x-auto h-full"
           >
-            {TABS.map((tab) => {
-              const isActive = activeTab === tab.id;
+            {TAB_IDS.map((tabId) => {
+              const isActive = activeTab === tabId;
               return (
                 <button
-                  key={tab.id}
+                  key={tabId}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => setActiveTab(tabId)}
                   aria-current={isActive ? 'page' : undefined}
                   className={`relative h-full px-2.5 sm:px-1 flex items-center text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors focus-visible:outline-2 focus-visible:outline-zinc-900 ${
                     isActive
@@ -69,7 +63,7 @@ const PlannerShell: React.FC = () => {
                       : 'text-zinc-500 hover:text-zinc-900'
                   }`}
                 >
-                  {tab.label}
+                  {t.nav.tabs[tabId]}
                   {isActive && (
                     <span
                       aria-hidden="true"
@@ -81,8 +75,19 @@ const PlannerShell: React.FC = () => {
             })}
           </nav>
 
-          {/* Zone 3: Cloud Sync, Google Account & Backup Action */}
-          <div className="shrink-0">
+          {/* Zone 3: Language Switcher & Cloud Sync / Backup Action */}
+          <div className="shrink-0 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleLanguage}
+              title={t.nav.switchLanguageTitle}
+              aria-label={t.nav.switchLanguageAria}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-zinc-700 bg-white border border-zinc-300 rounded-md hover:bg-zinc-50 hover:text-zinc-950 transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-zinc-900"
+            >
+              <Languages className="w-3.5 h-3.5" />
+              <span className="font-mono font-semibold">{t.nav.languageShort}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setBackupModalOpen(true)}
@@ -93,7 +98,7 @@ const PlannerShell: React.FC = () => {
                   {user.photoURL ? (
                     <img
                       src={user.photoURL}
-                      alt={user.displayName || 'Account'}
+                      alt={user.displayName || t.nav.accountFallback}
                       className="w-4 h-4 rounded-full"
                       referrerPolicy="no-referrer"
                     />
@@ -102,7 +107,7 @@ const PlannerShell: React.FC = () => {
                       {accountInitial}
                     </span>
                   )}
-                  <span>{user.displayName?.split(' ')[0] || 'Account'}</span>
+                  <span>{user.displayName?.split(' ')[0] || t.nav.accountFallback}</span>
                   {syncStatus === 'syncing' ? (
                     <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />
                   ) : syncStatus === 'offline' || syncStatus === 'error' ? (
@@ -114,7 +119,7 @@ const PlannerShell: React.FC = () => {
               ) : (
                 <>
                   <Database className="w-3.5 h-3.5" />
-                  <span>Sync &amp; Backup</span>
+                  <span>{t.nav.syncBackup}</span>
                 </>
               )}
             </button>
@@ -141,12 +146,6 @@ const PlannerShell: React.FC = () => {
           </div>
         ) : (
           <div className="flex-1 flex flex-col">
-            {activeTab === 'kanban' && (
-              <KanbanTab
-                onNewTask={(status) => handleOpenNewTask(status ?? 'todo')}
-                onEditTask={handleOpenEditTask}
-              />
-            )}
             {activeTab === 'master' && (
               <MasterScheduleTab
                 onNewTask={() => handleOpenNewTask('todo')}
@@ -190,10 +189,12 @@ const PlannerShell: React.FC = () => {
 
 export default function App() {
   return (
-    <ErrorBoundary>
-      <AppStateProvider>
-        <PlannerShell />
-      </AppStateProvider>
-    </ErrorBoundary>
+    <LanguageProvider>
+      <ErrorBoundary>
+        <AppStateProvider>
+          <PlannerShell />
+        </AppStateProvider>
+      </ErrorBoundary>
+    </LanguageProvider>
   );
 }

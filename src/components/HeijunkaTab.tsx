@@ -22,6 +22,7 @@ import {
 } from '../utils/dateUtils';
 import { getFixedActivitiesForDate } from '../utils/schedulingUtils';
 import { StepSplitModal } from './StepSplitModal';
+import { useLanguage } from '../i18n/LanguageContext';
 
 export const HeijunkaTab: React.FC = () => {
   const {
@@ -33,6 +34,7 @@ export const HeijunkaTab: React.FC = () => {
     todayStr,
     displayedWeekStart,
   } = useAppState();
+  const { language, t } = useLanguage();
 
   const [heijunkaWeekStart, setHeijunkaWeekStart] = useState<string>(displayedWeekStart);
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
@@ -110,7 +112,7 @@ export const HeijunkaTab: React.FC = () => {
     let totalFixedWorkingInWeek = 0;
 
     const days = weekDays.map((dateStr) => {
-      const hdr = formatDayHeader(dateStr);
+      const hdr = formatDayHeader(dateStr, language);
       const byTask = new Map<string, number>();
 
       for (const blk of scheduledBlocks) {
@@ -201,6 +203,7 @@ export const HeijunkaTab: React.FC = () => {
     historicalDailyAvgHours,
     taskMap,
     deadlinesByDay,
+    language,
   ]);
 
   const handleOpenSplitForTask = (taskId: string, preferredDate?: string) => {
@@ -252,23 +255,26 @@ export const HeijunkaTab: React.FC = () => {
           <div className="flex items-center gap-2">
             <Scale className="w-5 h-5 text-zinc-800" />
             <h1 className="text-xl font-semibold tracking-tight text-zinc-900">
-              Heijunka — Workload Leveling & Bottlenecks
+              {t.heijunka.title}
             </h1>
           </div>
           <p className="text-xs text-zinc-500 mt-0.5 tabular-nums">
-            Level daily demand across the Sat–Fri week against optimal 7-day distribution, historical baseline, and milestone deadlines
+            {t.heijunka.subtitle}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <span className="text-xs font-mono tabular-nums text-zinc-600">
-            Week {getISOWeekNumber(addDays(heijunkaWeekStart, 4))} · {formatWeekRange(heijunkaWeekStart)}
+            {t.heijunka.weekPrefix(
+              getISOWeekNumber(addDays(heijunkaWeekStart, 4)),
+              formatWeekRange(heijunkaWeekStart, language)
+            )}
           </span>
           <div className="inline-flex items-center border border-zinc-300 rounded-md bg-white overflow-hidden shrink-0">
             <button
               type="button"
               onClick={() => setHeijunkaWeekStart((prev) => addDays(prev, -7))}
-              aria-label="Previous Heijunka week"
+              aria-label={t.heijunka.prevWeekAria}
               className="px-2.5 py-1.5 text-zinc-700 hover:bg-zinc-100 border-r border-zinc-200"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -278,12 +284,12 @@ export const HeijunkaTab: React.FC = () => {
               onClick={() => setHeijunkaWeekStart(getStartOfWeek(todayStr))}
               className="px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-100 whitespace-nowrap"
             >
-              Current
+              {t.common.current}
             </button>
             <button
               type="button"
               onClick={() => setHeijunkaWeekStart((prev) => addDays(prev, 7))}
-              aria-label="Next Heijunka week"
+              aria-label={t.heijunka.nextWeekAria}
               className="px-2.5 py-1.5 text-zinc-700 hover:bg-zinc-100 border-l border-zinc-200"
             >
               <ChevronRight className="w-4 h-4" />
@@ -297,10 +303,10 @@ export const HeijunkaTab: React.FC = () => {
         <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-zinc-100">
           <div>
             <h2 className="text-sm font-semibold text-zinc-900">
-              Weekly Bottleneck Histogram — Daily Working Hours by Task
+              {t.heijunka.histTitle}
             </h2>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Includes scheduled WBS steps and working fixed commitments (classes/meetings); excludes lunch &amp; breaks. Hover a task segment to split steps.
+              {t.heijunka.histDesc}
             </p>
           </div>
 
@@ -308,32 +314,35 @@ export const HeijunkaTab: React.FC = () => {
             <div className="flex items-center gap-1.5">
               <span className="w-3 border-t-2 border-dashed border-emerald-600 inline-block" />
               <span>
-                Optimal:{' '}
+                {t.heijunka.optimal}{' '}
                 <span className="font-mono font-semibold text-emerald-800">
-                  {heijunkaData.optimalDailyHours.toFixed(1)}h/d
+                  {heijunkaData.optimalDailyHours.toFixed(1)}
+                  {t.heijunka.perDayUnit}
                 </span>
               </span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-3 border-t-2 border-dotted border-sky-600 inline-block" />
               <span>
-                Historical Avg:{' '}
+                {t.heijunka.historicalAvg}{' '}
                 <span className="font-mono font-semibold text-sky-800">
-                  {historicalDailyAvgHours !== null ? `${historicalDailyAvgHours.toFixed(1)}h/d` : '—'}
+                  {historicalDailyAvgHours !== null
+                    ? `${historicalDailyAvgHours.toFixed(1)}${t.heijunka.perDayUnit}`
+                    : '—'}
                 </span>
               </span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-3 border-t-2 border-dashed border-red-400 inline-block" />
               <span>
-                Peak Cap:{' '}
+                {t.heijunka.peakCap}{' '}
                 <span className="font-mono font-semibold text-zinc-900">
                   {workCapacity.dailyTargetHours}h
                 </span>
               </span>
             </div>
             <div>
-              Spread:{' '}
+              {t.heijunka.spread}{' '}
               <span
                 className={`font-mono font-semibold ${
                   heijunkaData.imbalanceRatio >= 1.5 ? 'text-amber-700' : 'text-zinc-900'
@@ -349,12 +358,13 @@ export const HeijunkaTab: React.FC = () => {
           <div className="mt-4 px-3.5 py-2 text-xs font-medium text-amber-900 bg-amber-50 border border-amber-200 rounded-md flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
             <span>
-              Workload peak detected on{' '}
-              {heijunkaData.overloadedDays
-                .map((d) => `${d.shortName} ${d.dayNum} (${d.totalHours.toFixed(1)}h)`)
-                .join(', ')}{' '}
-              — exceeds your {workCapacity.dailyTargetHours}h daily target. Split oversized steps below to level demand toward{' '}
-              {heijunkaData.optimalDailyHours.toFixed(1)}h/day.
+              {t.heijunka.overloadAlert(
+                heijunkaData.overloadedDays
+                  .map((d) => `${d.shortName} ${d.dayNum} (${d.totalHours.toFixed(1)}h)`)
+                  .join(', '),
+                workCapacity.dailyTargetHours,
+                heijunkaData.optimalDailyHours.toFixed(1)
+              )}
             </span>
           </div>
         )}
@@ -375,7 +385,7 @@ export const HeijunkaTab: React.FC = () => {
                 className="absolute left-0 right-0 border-t-2 border-dashed border-red-400/80 pointer-events-none z-10"
               >
                 <span className="text-[10px] font-mono font-semibold text-red-700 bg-white/95 px-1 -mt-4 inline-block">
-                  Cap {workCapacity.dailyTargetHours}h
+                  {t.heijunka.capLine(workCapacity.dailyTargetHours)}
                 </span>
               </div>
             )}
@@ -391,7 +401,7 @@ export const HeijunkaTab: React.FC = () => {
                   className="absolute left-0 right-0 border-t-2 border-dashed border-emerald-600/85 pointer-events-none z-10 flex justify-end"
                 >
                   <span className="text-[10px] font-mono font-semibold text-emerald-800 bg-white/95 px-1 -mt-4 inline-block">
-                    Optimal {heijunkaData.optimalDailyHours.toFixed(1)}h
+                    {t.heijunka.optimalLine(heijunkaData.optimalDailyHours.toFixed(1))}
                   </span>
                 </div>
               )}
@@ -408,7 +418,7 @@ export const HeijunkaTab: React.FC = () => {
                   className="absolute left-0 right-0 border-t-2 border-dotted border-sky-600/85 pointer-events-none z-10 flex justify-center"
                 >
                   <span className="text-[10px] font-mono font-semibold text-sky-800 bg-white/95 px-1 -mt-4 inline-block">
-                    Hist Avg {historicalDailyAvgHours.toFixed(1)}h
+                    {t.heijunka.histAvgLine(historicalDailyAvgHours.toFixed(1))}
                   </span>
                 </div>
               )}
@@ -437,7 +447,7 @@ export const HeijunkaTab: React.FC = () => {
                         return (
                           <span
                             key={`${dl.taskId}-${i}`}
-                            title={`Deadline: ${dl.taskName}${dl.label ? ` — ${dl.label}` : ''}`}
+                            title={`${t.heijunka.deadlinePrefix} ${dl.taskName}${dl.label ? ` — ${dl.label}` : ''}`}
                             className="inline-flex items-center gap-0.5 text-[9px] font-mono px-1 py-0.5 rounded border bg-white truncate max-w-[82px]"
                             style={{ borderColor: swatch.swatch, color: swatch.text }}
                           >
@@ -488,7 +498,7 @@ export const HeijunkaTab: React.FC = () => {
                           backgroundImage:
                             'repeating-linear-gradient(-45deg, #e4e4e7, #e4e4e7 4px, #f4f4f5 4px, #f4f4f5 8px)',
                         }}
-                        title={`Fixed Working Commitments: ${formatDuration(day.fixedWorkingMinutes)}`}
+                        title={t.heijunka.fixedWorkingTitle(formatDuration(day.fixedWorkingMinutes))}
                         className="w-full border-t border-zinc-300/80"
                       />
                     )}
@@ -523,10 +533,10 @@ export const HeijunkaTab: React.FC = () => {
                               type="button"
                               onClick={() => handleOpenSplitForTask(task.id, day.dateStr)}
                               className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold bg-white/95 text-zinc-900 border border-zinc-300 rounded shadow-xs hover:bg-zinc-900 hover:text-white transition-colors"
-                              title={`Split a step in "${task.name}" into two smaller steps`}
+                              title={t.heijunka.splitBtnTitle(task.name)}
                             >
                               <Scissors className="w-2.5 h-2.5" />
-                              Split
+                              {t.heijunka.splitBtn}
                             </button>
                           )}
                         </div>
@@ -568,7 +578,7 @@ export const HeijunkaTab: React.FC = () => {
         {/* Task Breakdown Legend with Hover-Reveal Split Control */}
         <div className="mt-5 pt-4 border-t border-zinc-200">
           <div className="text-xs font-semibold text-zinc-700 mb-2.5">
-            Weekly Working Time Decomposition (Hover a task to split a bottleneck step)
+            {t.heijunka.decompTitle}
           </div>
           <div className="flex flex-wrap gap-2.5">
             {heijunkaData.totalFixedWorkingInWeek > 0 && (
@@ -580,7 +590,7 @@ export const HeijunkaTab: React.FC = () => {
                       'repeating-linear-gradient(-45deg, #e4e4e7, #e4e4e7 3px, #f4f4f5 3px, #f4f4f5 6px)',
                   }}
                 />
-                <span className="font-medium text-zinc-800">Classes &amp; Fixed Work</span>
+                <span className="font-medium text-zinc-800">{t.heijunka.classesFixedWork}</span>
                 <span className="font-mono text-zinc-500">
                   {formatDuration(heijunkaData.totalFixedWorkingInWeek)}
                 </span>
@@ -590,7 +600,7 @@ export const HeijunkaTab: React.FC = () => {
             {heijunkaData.weekTaskLegend.length === 0 &&
             heijunkaData.totalFixedWorkingInWeek === 0 ? (
               <span className="text-xs text-zinc-500">
-                No working hours scheduled for this week yet.
+                {t.heijunka.noHoursYet}
               </span>
             ) : (
               heijunkaData.weekTaskLegend.map(({ taskId, task, minutes }) => {
@@ -626,7 +636,7 @@ export const HeijunkaTab: React.FC = () => {
                         }`}
                       >
                         <Scissors className="w-3 h-3" />
-                        Split Step
+                        {t.heijunka.splitStepBtn}
                       </button>
                     )}
                   </div>
@@ -639,14 +649,14 @@ export const HeijunkaTab: React.FC = () => {
             <div className="mt-3 p-3.5 bg-zinc-50 border border-zinc-300 rounded-md">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-zinc-900">
-                  Select a step from &ldquo;{taskMap.get(stepPickerForTaskId)?.name}&rdquo; to split into two:
+                  {t.heijunka.pickerPrompt(taskMap.get(stepPickerForTaskId)?.name ?? '')}
                 </span>
                 <button
                   type="button"
                   onClick={() => setStepPickerForTaskId(null)}
                   className="text-xs text-zinc-500 hover:text-zinc-900"
                 >
-                  Cancel
+                  {t.common.cancel}
                 </button>
               </div>
               <div className="flex flex-wrap gap-2">

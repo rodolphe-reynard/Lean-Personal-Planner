@@ -27,6 +27,7 @@ import {
   getFixedActivitiesForDate,
   validateAndBuildAIProposal,
 } from '../utils/schedulingUtils';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface AIScheduleModalProps {
   isOpen: boolean;
@@ -34,11 +35,11 @@ interface AIScheduleModalProps {
   onClose: () => void;
 }
 
-const DIFF_LABELS: Record<ProposalChangeKind, { label: string; style: string }> = {
-  added: { label: 'ADDED', style: 'text-emerald-800 bg-emerald-50 border-emerald-200' },
-  modified: { label: 'MODIFIED', style: 'text-amber-800 bg-amber-50 border-amber-200' },
-  removed: { label: 'REMOVED', style: 'text-red-800 bg-red-50 border-red-200' },
-  unchanged: { label: 'KEPT', style: 'text-zinc-600 bg-zinc-50 border-zinc-200' },
+const DIFF_STYLES: Record<ProposalChangeKind, string> = {
+  added: 'text-emerald-800 bg-emerald-50 border-emerald-200',
+  modified: 'text-amber-800 bg-amber-50 border-amber-200',
+  removed: 'text-red-800 bg-red-50 border-red-200',
+  unchanged: 'text-zinc-600 bg-zinc-50 border-zinc-200',
 };
 
 export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
@@ -59,6 +60,7 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
     restoreScheduleVersion,
     undoLastScheduleChange,
   } = useAppState();
+  const { t, language } = useLanguage();
 
   const [mode, setMode] = useState<'assistant' | 'history'>(initialMode);
   const [preferenceNote, setPreferenceNote] = useState('');
@@ -82,7 +84,10 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
   const weekDays = useMemo(() => getWeekDays(displayedWeekStart), [displayedWeekStart]);
   const weekDaySet = useMemo(() => new Set(weekDays), [weekDays]);
   const isoWeekNum = useMemo(() => getISOWeekNumber(addDays(displayedWeekStart, 4)), [displayedWeekStart]);
-  const weekRangeLabel = useMemo(() => formatWeekRange(displayedWeekStart), [displayedWeekStart]);
+  const weekRangeLabel = useMemo(
+    () => formatWeekRange(displayedWeekStart, language),
+    [displayedWeekStart, language]
+  );
 
   const currentWeekBlocks = useMemo(
     () => scheduledBlocks.filter((b) => weekDaySet.has(b.date)),
@@ -145,6 +150,7 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
             deadlines: getTaskDeadlines(t).map((d) => ({ date: d.date, label: d.label })),
             status: t.status,
             responsibility: t.responsibility,
+            valueCategory: t.valueCategory,
           })),
           steps: relevantSteps.map((s) => ({
             id: s.id,
@@ -159,18 +165,19 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
           })),
           fixedActivities: materializedFixed,
           currentBlocks: currentWeekBlocks,
+          language,
         }),
       });
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate AI schedule proposal.');
+        throw new Error(data.error || t.aiModal.errGenerate);
       }
 
       const validated = validateAndBuildAIProposal({
         weekStart: displayedWeekStart,
         weekDays,
-        summary: typeof data.summary === 'string' ? data.summary : 'Optimized weekly schedule proposal.',
+        summary: typeof data.summary === 'string' ? data.summary : t.aiModal.defaultSummary,
         aiConflicts: Array.isArray(data.conflicts) ? (data.conflicts as AIConflict[]) : [],
         rawProposed: Array.isArray(data.proposedBlocks)
           ? (data.proposedBlocks as AIProposedBlockInput[])
@@ -180,11 +187,12 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
         fixedActivities,
         currentWeekBlocks,
         allBlocksOutsideWeek,
+        lang: language,
       });
 
       setProposal(validated);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to reach scheduling assistant.');
+      setError(err instanceof Error ? err.message : t.aiModal.errReach);
     } finally {
       setIsGenerating(false);
     }
@@ -195,10 +203,10 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
     applyProposedWeekSchedule(
       proposal.weekStart,
       proposal.proposedWeekBlocks,
-      `Snapshot before AI optimization (Week ${isoWeekNum})`
+      t.aiModal.snapshotLabel(isoWeekNum)
     );
     setProposal(null);
-    setAppliedBanner('Approved changes applied. Previous schedule saved in Version History.');
+    setAppliedBanner(t.aiModal.bannerApplied);
   };
 
   const changedDiffs = proposal ? proposal.diffs.filter((d) => d.kind !== 'unchanged') : [];
@@ -222,7 +230,7 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-zinc-800" />
               <h2 id="ai-schedule-title" className="text-base font-semibold text-zinc-900">
-                AI Weekly Scheduling Assistant
+                {t.aiModal.title}
               </h2>
             </div>
 
@@ -236,7 +244,7 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                     : 'text-zinc-600 hover:text-zinc-900'
                 }`}
               >
-                Optimize Week {isoWeekNum}
+                {t.aiModal.optimizeTab(isoWeekNum)}
               </button>
               <button
                 type="button"
@@ -247,7 +255,7 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                     : 'text-zinc-600 hover:text-zinc-900'
                 }`}
               >
-                Version History ({scheduleVersions.length})
+                {t.aiModal.historyTab(scheduleVersions.length)}
               </button>
             </div>
           </div>
@@ -258,19 +266,19 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                 type="button"
                 onClick={() => {
                   undoLastScheduleChange();
-                  setAppliedBanner('Restored the immediately preceding schedule version.');
+                  setAppliedBanner(t.aiModal.bannerUndone);
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-700 bg-white border border-zinc-300 rounded-md hover:bg-zinc-50 whitespace-nowrap shrink-0"
               >
                 <Undo2 className="w-3.5 h-3.5" />
-                Undo Last Apply
+                {t.aiModal.undoLastApply}
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
               className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-md"
-              aria-label="Close modal"
+              aria-label={t.common.closeModal}
             >
               <X className="w-4 h-4" />
             </button>
@@ -299,17 +307,17 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="text-xs font-semibold text-zinc-900">
-                      Week {isoWeekNum} · {weekRangeLabel} (Sat–Fri)
+                      {t.aiModal.weekLine(isoWeekNum, weekRangeLabel)}
                     </div>
                     <div className="text-[11px] text-zinc-500 mt-0.5 tabular-nums">
-                      Respects fixed activities, step dependencies, WILL milestone weeks, and excludes &ldquo;Others&rdquo; responsibilities. Never alters your live calendar until you approve.
+                      {t.aiModal.contextNote}
                     </div>
                   </div>
                   <div className="flex items-center gap-4 text-xs font-mono tabular-nums text-zinc-700">
-                    <span>Placed: {formatDuration(capacityStats.scheduledStepsMinutes)}</span>
-                    <span>Fixed Work: {formatDuration(capacityStats.fixedWorkingMinutes)}</span>
+                    <span>{t.aiModal.placed(formatDuration(capacityStats.scheduledStepsMinutes))}</span>
+                    <span>{t.aiModal.fixedWork(formatDuration(capacityStats.fixedWorkingMinutes))}</span>
                     <span className="font-semibold text-zinc-900">
-                      Available: {formatDuration(capacityStats.remainingAvailableMinutes)}
+                      {t.aiModal.available(formatDuration(capacityStats.remainingAvailableMinutes))}
                     </span>
                   </div>
                 </div>
@@ -319,7 +327,7 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                     type="text"
                     value={preferenceNote}
                     onChange={(e) => setPreferenceNote(e.target.value)}
-                    placeholder="Optional guidance (e.g., keep Saturday light, finish WILL tasks before Wednesday)..."
+                    placeholder={t.aiModal.guidancePlaceholder}
                     className="flex-1 px-3 py-2 text-xs text-zinc-900 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900"
                   />
                   <button
@@ -329,7 +337,11 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                     className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-zinc-900 rounded-md hover:bg-zinc-800 disabled:opacity-60 whitespace-nowrap shrink-0"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
-                    {isGenerating ? 'Analyzing Constraints...' : proposal ? 'Regenerate Proposal' : 'Generate Proposed Schedule'}
+                    {isGenerating
+                      ? t.aiModal.analyzingBtn
+                      : proposal
+                      ? t.aiModal.regenerateBtn
+                      : t.aiModal.generateBtn}
                   </button>
                 </div>
               </div>
@@ -339,7 +351,7 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                 <div className="space-y-4">
                   <div className="border border-zinc-200 rounded-md p-4 bg-white">
                     <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Proposed Plan Summary
+                      {t.aiModal.summaryHeading}
                     </div>
                     <p className="text-sm text-zinc-800 mt-1 leading-relaxed">{proposal.summary}</p>
                   </div>
@@ -349,12 +361,14 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                     <div className="border border-amber-200 bg-amber-50/60 rounded-md p-4 space-y-2">
                       <div className="flex items-center gap-2 text-xs font-semibold text-amber-900">
                         <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-                        Detected Conflicts & Constraints ({proposal.conflicts.length})
+                        {t.aiModal.conflictsHeading(proposal.conflicts.length)}
                       </div>
                       <ul className="space-y-1 text-xs text-amber-900 list-disc pl-5">
                         {proposal.conflicts.map((c, idx) => (
                           <li key={idx}>
-                            {c.date ? <span className="font-mono">{formatShortDate(c.date)}: </span> : null}
+                            {c.date ? (
+                              <span className="font-mono">{formatShortDate(c.date, language)}: </span>
+                            ) : null}
                             {c.message}
                           </li>
                         ))}
@@ -366,16 +380,16 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                   <div className="border border-zinc-200 rounded-md overflow-hidden">
                     <div className="px-4 py-3 bg-zinc-50 border-b border-zinc-200 flex items-center justify-between">
                       <h3 className="text-xs font-semibold text-zinc-800">
-                        Schedule Comparison (Current vs Proposed)
+                        {t.aiModal.comparisonHeading}
                       </h3>
                       <span className="text-[11px] font-mono tabular-nums text-zinc-500">
-                        {changedDiffs.length} change{changedDiffs.length === 1 ? '' : 's'} · {unchangedCount} unchanged
+                        {t.aiModal.changesSummary(changedDiffs.length, unchangedCount)}
                       </span>
                     </div>
 
                     {proposal.diffs.length === 0 ? (
                       <div className="p-6 text-center text-xs text-zinc-500">
-                        No changes or blocks proposed for this week.
+                        {t.aiModal.noProposals}
                       </div>
                     ) : (
                       <div className="divide-y divide-zinc-200/80 max-h-[300px] overflow-y-auto">
@@ -383,15 +397,16 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                           const step = stepMap.get(item.stepId);
                           const task = taskMap.get(item.taskId);
                           const swatch = task ? getTaskSwatch(task.colorId) : null;
-                          const badge = DIFF_LABELS[item.kind];
+                          const badgeStyle = DIFF_STYLES[item.kind];
+                          const badgeLabel = t.aiModal.diffLabels[item.kind];
 
                           return (
                             <div key={`${item.stepId}-${idx}`} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                               <div className="flex items-start gap-2.5 min-w-0">
                                 <span
-                                  className={`px-1.5 py-0.5 text-[10px] font-mono font-semibold border rounded shrink-0 mt-0.5 ${badge.style}`}
+                                  className={`px-1.5 py-0.5 text-[10px] font-mono font-semibold border rounded shrink-0 mt-0.5 ${badgeStyle}`}
                                 >
-                                  {badge.label}
+                                  {badgeLabel}
                                 </span>
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-2">
@@ -422,14 +437,14 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                               <div className="flex items-center gap-2 text-[11px] font-mono tabular-nums shrink-0">
                                 {item.before ? (
                                   <span className={item.kind === 'removed' ? 'line-through text-red-700' : 'text-zinc-500'}>
-                                    {formatShortDate(item.before.date)}{' '}
+                                    {formatShortDate(item.before.date, language)}{' '}
                                     {formatMinutesToTime(item.before.startMinutes)}–
                                     {formatMinutesToTime(
                                       item.before.startMinutes + item.before.durationMinutes
                                     )}
                                   </span>
                                 ) : (
-                                  <span className="text-zinc-400">Unscheduled</span>
+                                  <span className="text-zinc-400">{t.common.unscheduled}</span>
                                 )}
 
                                 {(item.kind === 'added' || item.kind === 'modified') && (
@@ -437,7 +452,7 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                                     <ArrowRight className="w-3 h-3 text-zinc-400" />
                                     {item.after && (
                                       <span className="font-semibold text-zinc-900">
-                                        {formatShortDate(item.after.date)}{' '}
+                                        {formatShortDate(item.after.date, language)}{' '}
                                         {formatMinutesToTime(item.after.startMinutes)}–
                                         {formatMinutesToTime(
                                           item.after.startMinutes + item.after.durationMinutes
@@ -457,7 +472,7 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                   {/* Explicit Approval Footer */}
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-zinc-200">
                     <span className="text-xs text-zinc-500">
-                      Applying saves an automatic snapshot to Version History before updating Week {isoWeekNum}.
+                      {t.aiModal.applyHint(isoWeekNum)}
                     </span>
                     <div className="flex items-center gap-2.5">
                       <button
@@ -465,7 +480,7 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                         onClick={() => setProposal(null)}
                         className="px-4 py-2 text-xs font-medium text-zinc-700 bg-white border border-zinc-300 rounded-md hover:bg-zinc-50 whitespace-nowrap shrink-0"
                       >
-                        Discard Proposal
+                        {t.aiModal.discardBtn}
                       </button>
                       <button
                         type="button"
@@ -473,7 +488,7 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                         className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-zinc-900 rounded-md hover:bg-zinc-800 whitespace-nowrap shrink-0"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        Approve & Apply Schedule
+                        {t.aiModal.approveBtn}
                       </button>
                     </div>
                   </div>
@@ -487,17 +502,17 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                 <div>
                   <h3 className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
                     <History className="w-4 h-4 text-zinc-700" />
-                    Saved Schedule Snapshots
+                    {t.aiModal.historyTitle}
                   </h3>
                   <p className="text-xs text-zinc-500 mt-0.5">
-                    Every AI schedule application saves the previous calendar state automatically so you can restore anytime.
+                    {t.aiModal.historyDesc}
                   </p>
                 </div>
               </div>
 
               {scheduleVersions.length === 0 ? (
                 <div className="p-8 border border-dashed border-zinc-300 rounded-md text-center text-xs text-zinc-500">
-                  No schedule versions saved yet. Snapshots are created automatically whenever you approve an AI schedule change.
+                  {t.aiModal.noVersions}
                 </div>
               ) : (
                 <div className="divide-y divide-zinc-200 border border-zinc-200 rounded-md">
@@ -509,19 +524,24 @@ export const AIScheduleModal: React.FC<AIScheduleModalProps> = ({
                       <div>
                         <div className="text-xs font-medium text-zinc-900">{ver.label}</div>
                         <div className="text-[11px] font-mono tabular-nums text-zinc-500 mt-0.5">
-                          Saved {new Date(ver.createdAt).toLocaleString()} · {ver.blocks.length} total scheduled blocks
+                          {t.aiModal.savedMeta(
+                            new Date(ver.createdAt).toLocaleString(
+                              language === 'fr' ? 'fr-FR' : 'en-US'
+                            ),
+                            ver.blocks.length
+                          )}
                         </div>
                       </div>
                       <button
                         type="button"
                         onClick={() => {
                           restoreScheduleVersion(ver.id);
-                          setAppliedBanner(`Restored snapshot "${ver.label}".`);
+                          setAppliedBanner(t.aiModal.bannerRestored(ver.label));
                         }}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-800 bg-white border border-zinc-300 rounded-md hover:bg-zinc-50 whitespace-nowrap shrink-0"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
-                        Restore
+                        {t.aiModal.restoreBtn}
                       </button>
                     </div>
                   ))}

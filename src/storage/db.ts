@@ -287,6 +287,12 @@ export function normalizePPCRecord(raw: Partial<WeeklyPPCRecord> & { weekStart: 
           plannedCount: raw.snapshot.plannedCount ?? 0,
           completedCount: raw.snapshot.completedCount ?? 0,
           ppcPercent: raw.snapshot.ppcPercent ?? 0,
+          ...(raw.snapshot.ppcoPercent !== undefined ? { ppcoPercent: raw.snapshot.ppcoPercent } : {}),
+          ...(raw.snapshot.ppcoCompleted !== undefined ? { ppcoCompleted: raw.snapshot.ppcoCompleted } : {}),
+          ...(raw.snapshot.ppcoTotal !== undefined ? { ppcoTotal: raw.snapshot.ppcoTotal } : {}),
+          ...(raw.snapshot.clPercent !== undefined ? { clPercent: raw.snapshot.clPercent } : {}),
+          ...(raw.snapshot.clCommitted !== undefined ? { clCommitted: raw.snapshot.clCommitted } : {}),
+          ...(raw.snapshot.clShouldTotal !== undefined ? { clShouldTotal: raw.snapshot.clShouldTotal } : {}),
           completedItems: Array.isArray(raw.snapshot.completedItems) ? raw.snapshot.completedItems : [],
           incompleteItems: Array.isArray(raw.snapshot.incompleteItems) ? raw.snapshot.incompleteItems : [],
           locked: Boolean(raw.snapshot.locked),
@@ -598,6 +604,12 @@ export function createSampleWorkspace(todayStr = getTodayDateString()): Persiste
         plannedCount: 3,
         completedCount: 2,
         ppcPercent: 67,
+        ppcoPercent: 50,
+        ppcoCompleted: 1,
+        ppcoTotal: 2,
+        clPercent: 75,
+        clCommitted: 3,
+        clShouldTotal: 4,
         completedItems: [
           {
             stepId: 'step-hist-0a',
@@ -644,6 +656,12 @@ export function createSampleWorkspace(todayStr = getTodayDateString()): Persiste
         plannedCount: 4,
         completedCount: 3,
         ppcPercent: 75,
+        ppcoPercent: 67,
+        ppcoCompleted: 2,
+        ppcoTotal: 3,
+        clPercent: 80,
+        clCommitted: 4,
+        clShouldTotal: 5,
         completedItems: [
           {
             stepId: 'step-sample-1a',

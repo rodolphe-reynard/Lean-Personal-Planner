@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -16,12 +17,14 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   isOpen,
   title,
   message,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
+  confirmLabel,
+  cancelLabel,
   destructive = false,
   onConfirm,
   onCancel,
 }) => {
+  const { t } = useLanguage();
+
   useEffect(() => {
     if (!isOpen) return;
     const handleKey = (e: KeyboardEvent) => {
@@ -60,7 +63,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             type="button"
             onClick={onCancel}
             className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-md transition-colors focus-visible:outline-2 focus-visible:outline-zinc-900"
-            aria-label="Close dialog"
+            aria-label={t.common.closeDialog}
           >
             <X className="w-4 h-4" />
           </button>
@@ -74,7 +77,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             onClick={onCancel}
             className="px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-300 rounded-md hover:bg-zinc-50 transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-zinc-900"
           >
-            {cancelLabel}
+            {cancelLabel ?? t.common.cancel}
           </button>
           <button
             type="button"
@@ -85,7 +88,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                 : 'bg-zinc-900 text-white hover:bg-zinc-800'
             }`}
           >
-            {confirmLabel}
+            {confirmLabel ?? t.common.confirm}
           </button>
         </div>
       </div>

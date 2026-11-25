@@ -347,7 +347,7 @@
     },
     "WeeklyPPCRecord": {
       "title": "WeeklyPPCRecord",
-      "description": "Weekly Percent Plan Complete record, Reasons for Variance, and frozen weekly execution snapshot.",
+      "description": "Weekly Plan Reliability record (PPC, PPCO, CL), Reasons for Variance, and frozen weekly execution snapshot.",
       "type": "object",
       "properties": {
         "weekStart": {

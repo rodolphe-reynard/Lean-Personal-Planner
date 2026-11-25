@@ -1,12 +1,12 @@
 {
-  "projectId": "burnished-presence-bdw25",
-  "appId": "1:580997139923:web:a0a7cc5cb3a8712d31b326",
-  "apiKey": "AIzaSyANfSMUaNLi5HZwBYO2kbMINFEsrYISGXg",
-  "authDomain": "burnished-presence-bdw25.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-leanpersonalplan-e606bbb9-74a3-4d0a-bb83-4aa6cfa32c15",
-  "storageBucket": "burnished-presence-bdw25.firebasestorage.app",
-  "messagingSenderId": "580997139923",
+  "projectId": "gen-lang-client-0527824051",
+  "appId": "1:5188003542:web:fd3a42cb8bcade63908b77",
+  "apiKey": "AIzaSyASZNqwCREJqYXYN45NbIOy38GG94LYYLs",
+  "authDomain": "gen-lang-client-0527824051.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-organisationnces-21e4c75c-5300-4b2b-b40f-d70af61ea2a9",
+  "storageBucket": "gen-lang-client-0527824051.firebasestorage.app",
+  "messagingSenderId": "5188003542",
   "measurementId": "",
-  "oAuthClientId": "580997139923-ts3v83qeg399mia7on7dqessjr87lfl9.apps.googleusercontent.com",
+  "oAuthClientId": "5188003542-h59jfrt81s1iurgfs2skalu8oipv6tgt.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

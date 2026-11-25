@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Scissors, X } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext';
+import { useLanguage } from '../i18n/LanguageContext';
 import { WBSStep } from '../types';
 import { formatDuration } from '../utils/dateUtils';
 
@@ -25,6 +26,7 @@ export const StepSplitModal: React.FC<StepSplitModalProps> = ({
   onClose,
 }) => {
   const { splitStepIntoTwo } = useAppState();
+  const { t } = useLanguage();
 
   const [part1Title, setPart1Title] = useState('');
   const [part1Minutes, setPart1Minutes] = useState(30);
@@ -37,12 +39,12 @@ export const StepSplitModal: React.FC<StepSplitModalProps> = ({
     const total = Math.max(60, step.estimatedMinutes);
     const half1 = Math.max(30, Math.floor(total / 60) * 30);
     const half2 = Math.max(30, total - half1);
-    setPart1Title(`${step.title} — Part 1`);
-    setPart2Title(`${step.title} — Part 2`);
+    setPart1Title(t.splitModal.defaultPart1(step.title));
+    setPart2Title(t.splitModal.defaultPart2(step.title));
     setPart1Minutes(half1);
     setPart2Minutes(half2);
     setError(null);
-  }, [step]);
+  }, [step, t]);
 
   useEffect(() => {
     if (!step) return;
@@ -58,7 +60,7 @@ export const StepSplitModal: React.FC<StepSplitModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!part1Title.trim() || !part2Title.trim()) {
-      setError('Both split steps require a title.');
+      setError(t.splitModal.errMissingTitles);
       return;
     }
     splitStepIntoTwo({
@@ -88,22 +90,23 @@ export const StepSplitModal: React.FC<StepSplitModalProps> = ({
             <div className="flex items-center gap-2">
               <Scissors className="w-4 h-4 text-zinc-700" />
               <h2 id="split-step-title" className="text-base font-semibold text-zinc-900">
-                Split Step Into Two Smaller Steps
+                {t.splitModal.title}
               </h2>
             </div>
             <p className="text-xs text-zinc-500 mt-1">
-              {taskName ? `${taskName} · ` : ''}Original duration:{' '}
+              {taskName ? `${taskName} · ` : ''}
+              {t.splitModal.subtitlePrefix}{' '}
               <span className="font-mono tabular-nums text-zinc-700">
                 {formatDuration(step.estimatedMinutes)}
               </span>
-              . Part 2 will automatically depend on Part 1 so both can be scheduled independently.
+              . {t.splitModal.subtitleSuffix}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-md"
-            aria-label="Close modal"
+            aria-label={t.common.closeModal}
           >
             <X className="w-4 h-4" />
           </button>
@@ -119,7 +122,7 @@ export const StepSplitModal: React.FC<StepSplitModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_110px] gap-3 items-end">
             <div>
               <label htmlFor="split-p1-title" className="block text-xs font-medium text-zinc-700 mb-1">
-                First Step Title
+                {t.splitModal.part1Label}
               </label>
               <input
                 id="split-p1-title"
@@ -132,7 +135,7 @@ export const StepSplitModal: React.FC<StepSplitModalProps> = ({
             </div>
             <div>
               <label htmlFor="split-p1-dur" className="block text-xs font-medium text-zinc-700 mb-1">
-                Duration
+                {t.splitModal.durationLabel}
               </label>
               <select
                 id="split-p1-dur"
@@ -152,7 +155,7 @@ export const StepSplitModal: React.FC<StepSplitModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_110px] gap-3 items-end">
             <div>
               <label htmlFor="split-p2-title" className="block text-xs font-medium text-zinc-700 mb-1">
-                Second Step Title (After Part 1)
+                {t.splitModal.part2Label}
               </label>
               <input
                 id="split-p2-title"
@@ -164,7 +167,7 @@ export const StepSplitModal: React.FC<StepSplitModalProps> = ({
             </div>
             <div>
               <label htmlFor="split-p2-dur" className="block text-xs font-medium text-zinc-700 mb-1">
-                Duration
+                {t.splitModal.durationLabel}
               </label>
               <select
                 id="split-p2-dur"
@@ -187,13 +190,13 @@ export const StepSplitModal: React.FC<StepSplitModalProps> = ({
               onClick={onClose}
               className="px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-300 rounded-md hover:bg-zinc-50 whitespace-nowrap shrink-0"
             >
-              Cancel
+              {t.common.cancel}
             </button>
             <button
               type="submit"
               className="px-4 py-2 text-sm font-medium text-white bg-zinc-900 rounded-md hover:bg-zinc-800 whitespace-nowrap shrink-0"
             >
-              Split Into 2 Steps
+              {t.splitModal.submitBtn}
             </button>
           </div>
         </form>

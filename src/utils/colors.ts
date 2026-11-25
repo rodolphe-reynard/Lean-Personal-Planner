@@ -1,6 +1,7 @@
 export interface PastelSwatch {
   id: string;
   label: string;
+  labelFr: string;
   bg: string;       // Soft pastel fill
   bgHover: string;  // Slightly richer hover fill
   border: string;   // Crisp muted border
@@ -12,6 +13,7 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
   {
     id: 'sage',
     label: 'Sage',
+    labelFr: 'Sauge',
     bg: '#D3EBD5',
     bgHover: '#C1E2C4',
     border: '#8BC591',
@@ -21,6 +23,7 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
   {
     id: 'sky',
     label: 'Powder Blue',
+    labelFr: 'Bleu pastel',
     bg: '#CFE4FA',
     bgHover: '#BBD8F7',
     border: '#84B7EE',
@@ -30,6 +33,7 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
   {
     id: 'ochre',
     label: 'Pale Ochre',
+    labelFr: 'Ocre pâle',
     bg: '#FDE7BA',
     bgHover: '#FCDBA0',
     border: '#EBB765',
@@ -39,6 +43,7 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
   {
     id: 'rose',
     label: 'Dusty Rose',
+    labelFr: 'Rose poudré',
     bg: '#FAD4DA',
     bgHover: '#F6BFC8',
     border: '#EA909E',
@@ -48,6 +53,7 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
   {
     id: 'lavender',
     label: 'Lavender',
+    labelFr: 'Lavande',
     bg: '#E4DAFB',
     bgHover: '#D6C7F8',
     border: '#B49BF0',
@@ -57,6 +63,7 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
   {
     id: 'mint',
     label: 'Seafoam',
+    labelFr: 'Menthe douce',
     bg: '#C9EFE8',
     bgHover: '#B3E7DE',
     border: '#72CFC0',
@@ -66,6 +73,7 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
   {
     id: 'apricot',
     label: 'Apricot',
+    labelFr: 'Abricot',
     bg: '#FCDCCB',
     bgHover: '#FACBB3',
     border: '#ED9F7A',
@@ -75,6 +83,7 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
   {
     id: 'periwinkle',
     label: 'Periwinkle',
+    labelFr: 'Pervenche',
     bg: '#D5DCFA',
     bgHover: '#C0CAF7',
     border: '#90A2EE',
@@ -84,6 +93,7 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
   {
     id: 'lemon',
     label: 'Citron',
+    labelFr: 'Citron',
     bg: '#F4F3BA',
     bgHover: '#ECEA9E',
     border: '#D6D25C',
@@ -93,6 +103,7 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
   {
     id: 'blush',
     label: 'Mauve',
+    labelFr: 'Mauve',
     bg: '#F5D5F0',
     bgHover: '#EEC0E7',
     border: '#D994CE',
@@ -102,6 +113,7 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
   {
     id: 'ice',
     label: 'Glacier',
+    labelFr: 'Glacier',
     bg: '#CBEBF5',
     bgHover: '#B3E1EF',
     border: '#78C5DC',
@@ -111,6 +123,7 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
   {
     id: 'sand',
     label: 'Warm Sand',
+    labelFr: 'Sable chaud',
     bg: '#EDE1CE',
     bgHover: '#E3D1B6',
     border: '#C9AE84',
@@ -121,6 +134,10 @@ export const PASTEL_PALETTE: PastelSwatch[] = [
 
 export function getTaskSwatch(colorId: string): PastelSwatch {
   return PASTEL_PALETTE.find((c) => c.id === colorId) ?? PASTEL_PALETTE[0];
+}
+
+export function getSwatchLabel(swatch: PastelSwatch, lang: 'en' | 'fr'): string {
+  return lang === 'fr' ? swatch.labelFr : swatch.label;
 }
 
 export function pickNextAvailableColorId(usedColorIds: string[]): string {

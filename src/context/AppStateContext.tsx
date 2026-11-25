@@ -41,6 +41,7 @@ import {
   getWeekDays,
 } from '../utils/dateUtils';
 import {
+  computeWeeklyReliabilityMetrics,
   DEFAULT_WORK_CAPACITY,
   expandFixedActivityDates,
   hasDependencyCycle,
@@ -378,7 +379,7 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isLoading, setIsLoading] = useState(true);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [todayStr, setTodayStr] = useState<string>(() => getTodayDateString());
-  const [activeTab, setActiveTab] = useState<ActiveTab>('kanban');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('master');
   const [selectedWbsTaskId, setSelectedWbsTaskId] = useState<string | null>(null);
   const [displayedWeekStart, setDisplayedWeekStart] = useState<string>(() =>
     getStartOfWeek(getTodayDateString())
@@ -843,8 +844,8 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (previouslyLinkedUid === nextUser.uid && cloudSnapshot.hasUserProfile) {
           // Returning session for same account: attach cloud state smoothly without re-prompting migration
           const merged = mergeWorkspaces(currentWorkspaceRef.current, cloudSnapshot.workspace);
+          lastPushedWorkspaceRef.current = cloudSnapshot.workspace;
           applyWorkspaceLocally(merged);
-          lastPushedWorkspaceRef.current = merged;
           activeCloudUidRef.current = nextUser.uid;
           setCloudActiveUid(nextUser.uid);
           attachCloudRealtimeListeners(nextUser.uid);
@@ -1110,12 +1111,25 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const completedCount = completedItems.length;
         const ppcPercent = plannedCount > 0 ? Math.round((completedCount / plannedCount) * 100) : 0;
         const shouldLock = addDays(ws, 6) < todayStr;
+        const reliability = computeWeeklyReliabilityMetrics({
+          weekStart: ws,
+          tasks,
+          steps,
+          scheduledBlocks,
+          fixedActivities,
+        });
 
         const snapChanged =
           !existing?.snapshot ||
           existing.snapshot.plannedCount !== plannedCount ||
           existing.snapshot.completedCount !== completedCount ||
           existing.snapshot.ppcPercent !== ppcPercent ||
+          existing.snapshot.ppcoPercent !== reliability.ppcoPercent ||
+          existing.snapshot.ppcoCompleted !== reliability.ppcoCompleted ||
+          existing.snapshot.ppcoTotal !== reliability.ppcoTotal ||
+          existing.snapshot.clPercent !== reliability.clPercent ||
+          existing.snapshot.clCommitted !== reliability.clCommitted ||
+          existing.snapshot.clShouldTotal !== reliability.clShouldTotal ||
           existing.snapshot.locked !== shouldLock ||
           JSON.stringify(existing.snapshot.completedItems) !== JSON.stringify(completedItems) ||
           JSON.stringify(existing.snapshot.incompleteItems) !== JSON.stringify(incompleteItems);
@@ -1129,6 +1143,12 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               plannedCount,
               completedCount,
               ppcPercent,
+              ppcoPercent: reliability.ppcoPercent,
+              ppcoCompleted: reliability.ppcoCompleted,
+              ppcoTotal: reliability.ppcoTotal,
+              clPercent: reliability.clPercent,
+              clCommitted: reliability.clCommitted,
+              clShouldTotal: reliability.clShouldTotal,
               completedItems,
               incompleteItems,
               locked: shouldLock,
@@ -1142,7 +1162,7 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       return changed ? Array.from(nextMap.values()) : prev;
     });
-  }, [scheduledBlocks, steps, tasks, todayStr, user, pendingMigration]);
+  }, [scheduledBlocks, fixedActivities, steps, tasks, todayStr, user, pendingMigration]);
 
   // Maintain Cumulative Flow Diagram (CFD) daily snapshots: freeze past dates (< todayStr), update todayStr live
   useEffect(() => {
@@ -1351,6 +1371,36 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [steps]
   );
 
+  const reconcileTaskStatusFromSteps = useCallback(
+    (taskId: string, nextTaskSteps: WBSStep[], extraInProgress = false) => {
+      const now = Date.now();
+      const allCompleted = nextTaskSteps.length > 0 && nextTaskSteps.every((s) => s.completed);
+      const someCompleted = nextTaskSteps.some((s) => s.completed);
+      const anyInProgress =
+        extraInProgress || nextTaskSteps.some((s) => !s.completed && s.flowStatus === 'in_progress');
+
+      setTasks((prevTasks) =>
+        prevTasks.map((t) => {
+          if (t.id !== taskId) return t;
+          let nextStatus: TaskStatus = t.status;
+          if (allCompleted) {
+            nextStatus = 'completed';
+          } else if (someCompleted) {
+            nextStatus = 'in_progress';
+          } else if (t.status === 'completed') {
+            nextStatus = anyInProgress ? 'in_progress' : 'todo';
+          } else if (anyInProgress && t.status === 'todo') {
+            nextStatus = 'in_progress';
+          }
+          if (nextStatus === t.status) return t;
+          markLocalEdit('tasks', t.id);
+          return { ...t, status: nextStatus, updatedAt: now };
+        })
+      );
+    },
+    [markLocalEdit]
+  );
+
   const createStep = useCallback(
     (input: {
       taskId: string;
@@ -1364,33 +1414,31 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const parentTask = tasks.find((t) => t.id === input.taskId);
       const now = Date.now();
       const stepId = generateId('step');
-      let newStep!: WBSStep;
-      setSteps((prev) => {
-        const siblings = prev.filter((s) => s.taskId === input.taskId);
-        const maxOrder = siblings.reduce((max, s) => Math.max(max, s.order), -1);
-        newStep = {
-          id: stepId,
-          taskId: input.taskId,
-          title: input.title.trim(),
-          notes: (input.notes ?? '').trim(),
-          order: maxOrder + 1,
-          estimatedMinutes: input.estimatedMinutes ?? 60,
-          completed: false,
-          executionState: 'not_done',
-          flowStatus: 'not_started',
-          varianceReason: '',
-          responsibility: input.responsibility ?? parentTask?.responsibility ?? 'Me',
-          dependsOnStepIds: input.dependsOnStepIds ?? [],
-          valueCategory: input.valueCategory ?? parentTask?.valueCategory ?? 'VA',
-          createdAt: now,
-          updatedAt: now,
-        };
-        return [...prev, newStep];
-      });
+      const currentSiblings = steps.filter((s) => s.taskId === input.taskId);
+      const maxOrder = currentSiblings.reduce((max, s) => Math.max(max, s.order), -1);
+      const newStep: WBSStep = {
+        id: stepId,
+        taskId: input.taskId,
+        title: input.title.trim(),
+        notes: (input.notes ?? '').trim(),
+        order: maxOrder + 1,
+        estimatedMinutes: input.estimatedMinutes ?? 60,
+        completed: false,
+        executionState: 'not_done',
+        flowStatus: 'not_started',
+        varianceReason: '',
+        responsibility: input.responsibility ?? parentTask?.responsibility ?? 'Me',
+        dependsOnStepIds: input.dependsOnStepIds ?? [],
+        valueCategory: input.valueCategory ?? parentTask?.valueCategory ?? 'VA',
+        createdAt: now,
+        updatedAt: now,
+      };
+      setSteps((prev) => [...prev, newStep]);
       markLocalEdit('steps', stepId);
+      reconcileTaskStatusFromSteps(input.taskId, [...currentSiblings, newStep]);
       return newStep;
     },
-    [tasks, markLocalEdit]
+    [tasks, steps, markLocalEdit, reconcileTaskStatusFromSteps]
   );
 
   const promoteTaskIfTodo = useCallback(
@@ -1473,31 +1521,32 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           ? ''
           : targetStep.varianceReason;
 
-      setSteps((prev) =>
-        prev.map((s) =>
-          s.id === stepId
-            ? {
-                ...s,
-                ...patch,
-                dependsOnStepIds: safeDeps !== undefined ? safeDeps : s.dependsOnStepIds,
-                title: patch.title !== undefined ? patch.title.trim() : s.title,
-                notes: patch.notes !== undefined ? patch.notes.trim() : s.notes,
-                completed: nextCompleted,
-                executionState: nextExecutionState,
-                flowStatus: nextFlowStatus,
-                varianceReason: nextVarianceReason,
-                completedAt: nextCompleted ? s.completedAt ?? now : undefined,
-                updatedAt: now,
-              }
-            : s
-        )
-      );
+      const updatedStep: WBSStep = {
+        ...targetStep,
+        ...patch,
+        dependsOnStepIds: safeDeps !== undefined ? safeDeps : targetStep.dependsOnStepIds,
+        title: patch.title !== undefined ? patch.title.trim() : targetStep.title,
+        notes: patch.notes !== undefined ? patch.notes.trim() : targetStep.notes,
+        completed: nextCompleted,
+        executionState: nextExecutionState,
+        flowStatus: nextFlowStatus,
+        varianceReason: nextVarianceReason,
+        completedAt: nextCompleted ? targetStep.completedAt ?? now : undefined,
+        updatedAt: now,
+      };
 
-      if (nextCompleted || nextFlowStatus === 'in_progress') {
-        promoteTaskIfTodo(targetStep.taskId);
-      }
+      setSteps((prev) => prev.map((s) => (s.id === stepId ? updatedStep : s)));
+
+      const nextTaskSteps = steps
+        .filter((s) => s.taskId === targetStep.taskId)
+        .map((s) => (s.id === stepId ? updatedStep : s));
+      reconcileTaskStatusFromSteps(
+        targetStep.taskId,
+        nextTaskSteps,
+        nextFlowStatus === 'in_progress'
+      );
     },
-    [steps, scheduledBlocks, fixedActivities, markLocalEdit, promoteTaskIfTodo]
+    [steps, scheduledBlocks, fixedActivities, markLocalEdit, reconcileTaskStatusFromSteps]
   );
 
   const updateStepVariance = useCallback(
@@ -1613,47 +1662,57 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [steps, updateStep]
   );
 
-  const deleteStepCascade = useCallback((stepId: string) => {
-    const now = Date.now();
-    setSteps((prev) => {
-      const target = prev.find((s) => s.id === stepId);
-      const remaining = prev
-        .filter((s) => s.id !== stepId)
-        .map((s) =>
-          s.dependsOnStepIds.includes(stepId)
-            ? {
-                ...s,
-                dependsOnStepIds: s.dependsOnStepIds.filter((d) => d !== stepId),
-                updatedAt: now,
-              }
+  const deleteStepCascade = useCallback(
+    (stepId: string) => {
+      const now = Date.now();
+      const targetStep = steps.find((s) => s.id === stepId);
+      setSteps((prev) => {
+        const target = prev.find((s) => s.id === stepId);
+        const remaining = prev
+          .filter((s) => s.id !== stepId)
+          .map((s) =>
+            s.dependsOnStepIds.includes(stepId)
+              ? {
+                  ...s,
+                  dependsOnStepIds: s.dependsOnStepIds.filter((d) => d !== stepId),
+                  updatedAt: now,
+                }
+              : s
+          );
+        if (!target) return remaining;
+        const siblingIds = remaining
+          .filter((s) => s.taskId === target.taskId)
+          .sort((a, b) => a.order - b.order)
+          .map((s) => s.id);
+        const orderMap = new Map<string, number>();
+        siblingIds.forEach((id, idx) => orderMap.set(id, idx));
+        return remaining.map((s) =>
+          orderMap.has(s.id) && s.order !== orderMap.get(s.id)
+            ? { ...s, order: orderMap.get(s.id)!, updatedAt: now }
             : s
         );
-      if (!target) return remaining;
-      const siblingIds = remaining
-        .filter((s) => s.taskId === target.taskId)
-        .sort((a, b) => a.order - b.order)
-        .map((s) => s.id);
-      const orderMap = new Map<string, number>();
-      siblingIds.forEach((id, idx) => orderMap.set(id, idx));
-      return remaining.map((s) =>
-        orderMap.has(s.id) && s.order !== orderMap.get(s.id)
-          ? { ...s, order: orderMap.get(s.id)!, updatedAt: now }
-          : s
+      });
+      setScheduledBlocks((prev) => prev.filter((b) => b.stepId !== stepId));
+      setFixedActivities((prev) =>
+        prev.map((fa) =>
+          fa.linkedStepIds.includes(stepId)
+            ? {
+                ...fa,
+                linkedStepIds: fa.linkedStepIds.filter((id) => id !== stepId),
+                updatedAt: now,
+              }
+            : fa
+        )
       );
-    });
-    setScheduledBlocks((prev) => prev.filter((b) => b.stepId !== stepId));
-    setFixedActivities((prev) =>
-      prev.map((fa) =>
-        fa.linkedStepIds.includes(stepId)
-          ? {
-              ...fa,
-              linkedStepIds: fa.linkedStepIds.filter((id) => id !== stepId),
-              updatedAt: now,
-            }
-          : fa
-      )
-    );
-  }, []);
+      if (targetStep) {
+        const remainingTaskSteps = steps.filter(
+          (s) => s.taskId === targetStep.taskId && s.id !== stepId
+        );
+        reconcileTaskStatusFromSteps(targetStep.taskId, remainingTaskSteps);
+      }
+    },
+    [steps, reconcileTaskStatusFromSteps]
+  );
 
   const reorderTaskSteps = useCallback((taskId: string, orderedStepIds: string[]) => {
     const orderMap = new Map<string, number>();
@@ -1685,37 +1744,37 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       markLocalEdit('steps', orig.id);
       markLocalEdit('steps', part2Id);
 
+      const taskSiblings = steps
+        .filter((s) => s.taskId === orig.taskId)
+        .sort((a, b) => a.order - b.order);
+      const origIndex = taskSiblings.findIndex((s) => s.id === orig.id);
+
+      const part1: WBSStep = {
+        ...orig,
+        title: input.part1Title.trim() || `${orig.title} (Part 1)`,
+        estimatedMinutes: Math.max(30, input.part1Minutes),
+        updatedAt: now,
+      };
+
+      const part2: WBSStep = {
+        id: part2Id,
+        taskId: orig.taskId,
+        title: input.part2Title.trim() || `${orig.title} (Part 2)`,
+        notes: orig.notes,
+        order: origIndex + 1,
+        estimatedMinutes: Math.max(30, input.part2Minutes),
+        completed: false,
+        executionState: 'not_done',
+        flowStatus: 'not_started',
+        varianceReason: '',
+        responsibility: orig.responsibility,
+        dependsOnStepIds: [orig.id],
+        valueCategory: orig.valueCategory,
+        createdAt: now,
+        updatedAt: now,
+      };
+
       setSteps((prev) => {
-        const taskSiblings = prev
-          .filter((s) => s.taskId === orig.taskId)
-          .sort((a, b) => a.order - b.order);
-        const origIndex = taskSiblings.findIndex((s) => s.id === orig.id);
-
-        const part1: WBSStep = {
-          ...orig,
-          title: input.part1Title.trim() || `${orig.title} (Part 1)`,
-          estimatedMinutes: Math.max(30, input.part1Minutes),
-          updatedAt: now,
-        };
-
-        const part2: WBSStep = {
-          id: part2Id,
-          taskId: orig.taskId,
-          title: input.part2Title.trim() || `${orig.title} (Part 2)`,
-          notes: orig.notes,
-          order: origIndex + 1,
-          estimatedMinutes: Math.max(30, input.part2Minutes),
-          completed: false,
-          executionState: 'not_done',
-          flowStatus: 'not_started',
-          varianceReason: '',
-          responsibility: orig.responsibility,
-          dependsOnStepIds: [orig.id],
-          valueCategory: orig.valueCategory,
-          createdAt: now,
-          updatedAt: now,
-        };
-
         const updated = prev.map((s) => {
           if (s.id === orig.id) return part1;
           const nextDeps = s.dependsOnStepIds.includes(orig.id)
@@ -1739,8 +1798,14 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             : b
         )
       );
+
+      const nextTaskSteps = [
+        ...taskSiblings.map((s) => (s.id === orig.id ? part1 : s)),
+        part2,
+      ];
+      reconcileTaskStatusFromSteps(orig.taskId, nextTaskSteps);
     },
-    [steps, markLocalEdit]
+    [steps, markLocalEdit, reconcileTaskStatusFromSteps]
   );
 
   const scheduleStep = useCallback(

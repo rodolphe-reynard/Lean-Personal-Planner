@@ -6,10 +6,12 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
+  query,
   serverTimestamp,
   setDoc,
   Unsubscribe,
   updateDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import {
@@ -190,6 +192,12 @@ function serializePPCDoc(uid: string, record: WeeklyPPCRecord) {
       plannedCount: record.snapshot.plannedCount,
       completedCount: record.snapshot.completedCount,
       ppcPercent: record.snapshot.ppcPercent,
+      ...(record.snapshot.ppcoPercent !== undefined ? { ppcoPercent: record.snapshot.ppcoPercent } : {}),
+      ...(record.snapshot.ppcoCompleted !== undefined ? { ppcoCompleted: record.snapshot.ppcoCompleted } : {}),
+      ...(record.snapshot.ppcoTotal !== undefined ? { ppcoTotal: record.snapshot.ppcoTotal } : {}),
+      ...(record.snapshot.clPercent !== undefined ? { clPercent: record.snapshot.clPercent } : {}),
+      ...(record.snapshot.clCommitted !== undefined ? { clCommitted: record.snapshot.clCommitted } : {}),
+      ...(record.snapshot.clShouldTotal !== undefined ? { clShouldTotal: record.snapshot.clShouldTotal } : {}),
       completedItems: (record.snapshot.completedItems ?? []).slice(0, 150).map((item) => ({
         stepId: item.stepId,
         taskId: item.taskId,
@@ -294,7 +302,9 @@ export async function fetchCloudWorkspaceSnapshot(uid: string): Promise<CloudWor
   const readCol = async (sub: string) => {
     const p = `users/${uid}/${sub}`;
     try {
-      return await getDocs(collection(db, 'users', uid, sub));
+      return await getDocs(
+        query(collection(db, 'users', uid, sub), where('userId', '==', uid))
+      );
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, p);
     }
@@ -558,7 +568,12 @@ export async function pushWorkspaceToCloud(
       try {
         await updateDoc(doc(db, 'users', uid, 'ppcRecords', ppc.weekStart), {
           reasonsForVariance: clampStr(ppc.reasonsForVariance, 4000),
-          stepVariances: (ppc.stepVariances ?? []).slice(0, 100),
+          stepVariances: (ppc.stepVariances ?? []).slice(0, 100).map((sv) => ({
+            stepId: clampStr(sv.stepId, 128),
+            stepTitle: clampStr(sv.stepTitle, 240),
+            taskName: clampStr(sv.taskName, 200),
+            reason: clampStr(sv.reason, 1000),
+          })),
           updatedAt: ppc.updatedAt ?? Date.now(),
           syncedAt: serverTimestamp(),
         });
@@ -724,7 +739,12 @@ export async function syncDiffToCloud(
       try {
         await updateDoc(doc(db, 'users', uid, 'ppcRecords', p.weekStart), {
           reasonsForVariance: clampStr(p.reasonsForVariance, 4000),
-          stepVariances: (p.stepVariances ?? []).slice(0, 100),
+          stepVariances: (p.stepVariances ?? []).slice(0, 100).map((sv) => ({
+            stepId: clampStr(sv.stepId, 128),
+            stepTitle: clampStr(sv.stepTitle, 240),
+            taskName: clampStr(sv.taskName, 200),
+            reason: clampStr(sv.reason, 1000),
+          })),
           updatedAt: p.updatedAt ?? Date.now(),
           syncedAt: serverTimestamp(),
         });
@@ -822,9 +842,12 @@ export function subscribeToUserWorkspace(
 ): Unsubscribe {
   const unsubs: Unsubscribe[] = [];
 
+  const ownedQuery = (sub: string) =>
+    query(collection(db, 'users', uid, sub), where('userId', '==', uid));
+
   unsubs.push(
     onSnapshot(
-      collection(db, 'users', uid, 'tasks'),
+      ownedQuery('tasks'),
       (snap) => {
         const list = snap.docs.map((d) =>
           normalizeTask({ ...(d.data() as Partial<Task>), id: d.id, name: String(d.data().name ?? '') })
@@ -837,7 +860,7 @@ export function subscribeToUserWorkspace(
 
   unsubs.push(
     onSnapshot(
-      collection(db, 'users', uid, 'steps'),
+      ownedQuery('steps'),
       (snap) => {
         const list = snap.docs.map((d) =>
           normalizeStep({
@@ -855,7 +878,7 @@ export function subscribeToUserWorkspace(
 
   unsubs.push(
     onSnapshot(
-      collection(db, 'users', uid, 'scheduledBlocks'),
+      ownedQuery('scheduledBlocks'),
       (snap) => {
         const list: ScheduledBlock[] = snap.docs.map((d) => {
           const data = d.data();
@@ -877,7 +900,7 @@ export function subscribeToUserWorkspace(
 
   unsubs.push(
     onSnapshot(
-      collection(db, 'users', uid, 'fixedActivities'),
+      ownedQuery('fixedActivities'),
       (snap) => {
         const list: FixedActivity[] = snap.docs.map((d) => {
           const data = d.data();
@@ -904,7 +927,7 @@ export function subscribeToUserWorkspace(
 
   unsubs.push(
     onSnapshot(
-      collection(db, 'users', uid, 'ppcRecords'),
+      ownedQuery('ppcRecords'),
       (snap) => {
         const list = snap.docs.map((d) =>
           normalizePPCRecord({ ...(d.data() as Partial<WeeklyPPCRecord>), weekStart: d.id })
@@ -917,7 +940,7 @@ export function subscribeToUserWorkspace(
 
   unsubs.push(
     onSnapshot(
-      collection(db, 'users', uid, 'cfdSnapshots'),
+      ownedQuery('cfdSnapshots'),
       (snap) => {
         const list: DailyCFDSnapshot[] = snap.docs
           .map((d) => {
@@ -941,7 +964,7 @@ export function subscribeToUserWorkspace(
 
   unsubs.push(
     onSnapshot(
-      collection(db, 'users', uid, 'scheduleVersions'),
+      ownedQuery('scheduleVersions'),
       (snap) => {
         const list: ScheduleVersion[] = snap.docs
           .map((d) => {
@@ -963,7 +986,7 @@ export function subscribeToUserWorkspace(
 
   unsubs.push(
     onSnapshot(
-      collection(db, 'users', uid, 'settings'),
+      ownedQuery('settings'),
       (snap) => {
         const capDoc = snap.docs.find((d) => d.id === 'workCapacity');
         if (!capDoc) return;

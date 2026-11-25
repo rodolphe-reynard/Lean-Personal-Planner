@@ -11,9 +11,11 @@ import {
   Layers,
   Link2,
   Lock,
+  Pencil,
   Play,
   Plus,
   Sparkles,
+  Trash2,
   Undo2,
   X,
 } from 'lucide-react';
@@ -37,7 +39,6 @@ import {
   isTaskOverdue,
 } from '../utils/dateUtils';
 import {
-  calculateWeeklyCapacityStats,
   getFixedActivitiesForDate,
   getStepPullClassification,
   validateStepPlacement,
@@ -45,6 +46,7 @@ import {
 import { FixedActivityModal } from './FixedActivityModal';
 import { AIScheduleModal } from './AIScheduleModal';
 import { StepExecutionControl } from './StepExecutionControl';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface WeeklyPlanTabProps {
   onNewTask: () => void;
@@ -178,7 +180,6 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
     fixedActivities,
     ppcRecords,
     scheduleVersions,
-    workCapacity,
     todayStr,
     displayedWeekStart,
     goToPrevWeek,
@@ -187,6 +188,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
     scheduleStep,
     updateScheduledBlock,
     unscheduleBlock,
+    deleteFixedActivity,
     setStepExecutionState,
     toggleStepInProgress,
     linkStepToFixedActivity,
@@ -196,6 +198,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
     undoLastScheduleChange,
     openTaskInWBS,
   } = useAppState();
+  const { language, t } = useLanguage();
 
   const [flyout, setFlyout] = useState<{
     taskId: string;
@@ -204,6 +207,9 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
   const [pinnedTaskId, setPinnedTaskId] = useState<string | null>(null);
   const pinnedTaskIdRef = useRef<string | null>(null);
   pinnedTaskIdRef.current = pinnedTaskId;
+  const openOverlayCountRef = useRef(0);
+  const isPointerInSidebarCardRef = useRef(false);
+  const isPointerInFlyoutRef = useRef(false);
   const [showCompletedSidebar, setShowCompletedSidebar] = useState(false);
 
   const [fixedModalState, setFixedModalState] = useState<{
@@ -235,12 +241,29 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
   const scheduleCloseFlyout = () => {
     cancelCloseFlyout();
     closeFlyoutTimerRef.current = window.setTimeout(() => {
+      if (
+        openOverlayCountRef.current > 0 ||
+        isPointerInFlyoutRef.current ||
+        isPointerInSidebarCardRef.current
+      ) {
+        return;
+      }
       setFlyout((prev) => {
         if (prev && pinnedTaskIdRef.current === prev.taskId) return prev;
         return null;
       });
     }, 100);
   };
+
+  useEffect(() => {
+    openOverlayCountRef.current = 0;
+  }, [flyout?.taskId]);
+
+  useEffect(() => {
+    if (!flyout) {
+      isPointerInFlyoutRef.current = false;
+    }
+  }, [flyout]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -265,7 +288,10 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
     () => getISOWeekNumber(addDays(displayedWeekStart, 4)),
     [displayedWeekStart]
   );
-  const weekRangeLabel = useMemo(() => formatWeekRange(displayedWeekStart), [displayedWeekStart]);
+  const weekRangeLabel = useMemo(
+    () => formatWeekRange(displayedWeekStart, language),
+    [displayedWeekStart, language]
+  );
 
   const taskMap = useMemo(() => {
     const m = new Map<string, Task>();
@@ -320,6 +346,18 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
     return map;
   }, [fixedActivities, weekDays]);
 
+  const linkedStepIdsInWeek = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of weekDays) {
+      for (const fa of fixedActivitiesByDay.get(d) ?? []) {
+        for (const sid of fa.linkedStepIds) {
+          counts.set(sid, (counts.get(sid) ?? 0) + 1);
+        }
+      }
+    }
+    return counts;
+  }, [weekDays, fixedActivitiesByDay]);
+
   // Multi-deadline markers mapped onto matching week day columns
   const deadlinesByDay = useMemo(() => {
     const map = new Map<string, DayDeadlineMarker[]>();
@@ -334,11 +372,6 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
     }
     return map;
   }, [tasks, weekDays]);
-
-  const capacityStats = useMemo(
-    () => calculateWeeklyCapacityStats(weekDays, fixedActivities, scheduledBlocks, workCapacity),
-    [weekDays, fixedActivities, scheduledBlocks, workCapacity]
-  );
 
   // Separate active tasks into WILL (any milestone falls inside displayed week) vs Horizon (no milestone in displayed week)
   const { willTasks, horizonTasks, completedTasks } = useMemo(() => {
@@ -447,8 +480,8 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
     return { date: null, startMinutes: null };
   };
 
-  const validationDepsRef = useRef({ steps, scheduledBlocks, fixedActivities });
-  validationDepsRef.current = { steps, scheduledBlocks, fixedActivities };
+  const validationDepsRef = useRef({ steps, scheduledBlocks, fixedActivities, language });
+  validationDepsRef.current = { steps, scheduledBlocks, fixedActivities, language };
 
   useEffect(() => {
     if (!activeDrag) return;
@@ -523,6 +556,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
             allSteps: deps.steps,
             scheduledBlocks: deps.scheduledBlocks,
             fixedActivities: deps.fixedActivities,
+            lang: deps.language,
           });
           if (!check.ok) {
             setPlacementError(check.reason);
@@ -552,6 +586,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
               allSteps: deps.steps,
               scheduledBlocks: deps.scheduledBlocks,
               fixedActivities: deps.fixedActivities,
+              lang: deps.language,
             });
             if (!check.ok) {
               setPlacementError(check.reason);
@@ -575,6 +610,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
             allSteps: deps.steps,
             scheduledBlocks: deps.scheduledBlocks,
             fixedActivities: deps.fixedActivities,
+            lang: deps.language,
           });
           if (!check.ok) {
             setPlacementError(check.reason);
@@ -630,7 +666,9 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
     const swatch = getTaskSwatch(task.colorId);
     const taskSteps = stepsByTask.get(task.id) ?? [];
     const placedStepsInWeek = taskSteps.filter(
-      (s) => (scheduledStepIdsInWeek.get(s.id) ?? 0) > 0
+      (s) =>
+        (scheduledStepIdsInWeek.get(s.id) ?? 0) > 0 ||
+        (linkedStepIdsInWeek.get(s.id) ?? 0) > 0
     ).length;
     const deadlines = getTaskDeadlines(task);
     const nextDl = getNextRelevantDeadline(task, todayStr);
@@ -641,10 +679,13 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
       <div
         key={task.id}
         onMouseEnter={(e) => {
+          isPointerInSidebarCardRef.current = true;
+          cancelCloseFlyout();
           if (pinnedTaskId && pinnedTaskId !== task.id) return;
           openTaskFlyout(task.id, e.currentTarget);
         }}
         onMouseLeave={() => {
+          isPointerInSidebarCardRef.current = false;
           if (pinnedTaskId === task.id) return;
           scheduleCloseFlyout();
         }}
@@ -684,7 +725,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
 
             {isWill && task.status !== 'completed' && (
               <span className="text-[10px] font-mono font-semibold tracking-wide px-1.5 py-0.5 rounded shrink-0 bg-zinc-900 text-white">
-                WILL
+                {t.weekly.willTag}
               </span>
             )}
           </div>
@@ -692,15 +733,17 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
           <div className="mt-1.5 pl-4 flex items-center justify-between gap-2 text-[11px] tabular-nums">
             <span
               className={overdue ? 'font-semibold text-red-700' : 'text-zinc-500'}
-              title={deadlines.map((d) => `${d.label ? `${d.label}: ` : ''}${formatShortDate(d.date)}`).join('\n')}
+              title={deadlines
+                .map((d) => `${d.label ? `${d.label}: ` : ''}${formatShortDate(d.date, language)}`)
+                .join('\n')}
             >
-              {formatShortDate(nextDl.date)}
+              {formatShortDate(nextDl.date, language)}
               {deadlines.length > 1 ? ` (+${deadlines.length - 1})` : ''}
-              {overdue ? ' · Overdue' : ''}
-              {task.responsibility === 'Others' ? ' · Others' : ''}
+              {overdue ? ` · ${t.weekly.overdueTag}` : ''}
+              {task.responsibility === 'Others' ? ` · ${t.common.responsibility.Others}` : ''}
             </span>
-            <span className="font-mono text-zinc-500" title="Steps placed in this Weekly Work Plan">
-              {placedStepsInWeek}/{taskSteps.length} in WWP
+            <span className="font-mono text-zinc-500" title={t.weekly.placedInWwpTitle}>
+              {t.weekly.inWwp(placedStepsInWeek, taskSteps.length)}
             </span>
           </div>
         </div>
@@ -730,8 +773,9 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
       allSteps: steps,
       scheduledBlocks,
       fixedActivities,
+      lang: language,
     }).ok;
-  }, [activeDrag, steps, scheduledBlocks, fixedActivities]);
+  }, [activeDrag, steps, scheduledBlocks, fixedActivities, language]);
 
   const moveBlockGhostValid = useMemo(() => {
     if (
@@ -751,11 +795,9 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
       allSteps: steps,
       scheduledBlocks,
       fixedActivities,
+      lang: language,
     }).ok;
-  }, [activeDrag, steps, scheduledBlocks, fixedActivities]);
-
-  const isOverloaded =
-    capacityStats.totalWorkingMinutes > capacityStats.netCapacityMinutes;
+  }, [activeDrag, steps, scheduledBlocks, fixedActivities, language]);
 
   return (
     <div className="flex flex-col h-full">
@@ -764,54 +806,21 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
         <div>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-xl font-semibold tracking-tight text-zinc-900">
-              Weekly Work Plan
+              {t.weekly.title}
             </h1>
             <span className="text-xs font-mono tabular-nums text-zinc-500">
-              Week {isoWeekNum} · {weekRangeLabel}
+              {t.weekly.weekPrefix(isoWeekNum, weekRangeLabel)}
             </span>
             {isViewingCurrentWeek && (
               <span className="text-[11px] font-medium text-zinc-900 bg-zinc-200/80 px-2 py-0.5 rounded">
-                Current Week
+                {t.weekly.currentWeek}
               </span>
             )}
             {weekPpcSummary.pct !== null && (
               <span className="text-[11px] font-mono tabular-nums text-zinc-700 bg-white border border-zinc-200 px-2 py-0.5 rounded">
-                PPC {weekPpcSummary.pct}% ({weekPpcSummary.completed}/{weekPpcSummary.total})
+                {t.weekly.ppcBadge(weekPpcSummary.pct, weekPpcSummary.completed, weekPpcSummary.total)}
               </span>
             )}
-          </div>
-          <div className="text-xs text-zinc-500 mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 tabular-nums">
-            <span>
-              Capacity:{' '}
-              <span className="font-mono text-zinc-700">
-                {formatDuration(capacityStats.netCapacityMinutes)}
-              </span>
-            </span>
-            <span className="text-zinc-300" aria-hidden="true">·</span>
-            <span>
-              Fixed Work:{' '}
-              <span className="font-mono text-zinc-700">
-                {formatDuration(capacityStats.fixedWorkingMinutes)}
-              </span>
-            </span>
-            <span className="text-zinc-300" aria-hidden="true">·</span>
-            <span>
-              Scheduled Steps:{' '}
-              <span className="font-mono text-zinc-700">
-                {formatDuration(capacityStats.scheduledStepsMinutes)}
-              </span>
-            </span>
-            <span className="text-zinc-300" aria-hidden="true">·</span>
-            <span className={isOverloaded ? 'font-semibold text-red-700' : 'font-semibold text-zinc-900'}>
-              Remaining Available:{' '}
-              <span className="font-mono">
-                {isOverloaded
-                  ? `-${formatDuration(
-                      capacityStats.totalWorkingMinutes - capacityStats.netCapacityMinutes
-                    )} over capacity`
-                  : formatDuration(capacityStats.remainingAvailableMinutes)}
-              </span>
-            </span>
           </div>
         </div>
 
@@ -826,7 +835,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
             }`}
           >
             <ClipboardList className="w-3.5 h-3.5" />
-            Variance &amp; Review
+            {t.weekly.varianceReviewBtn}
           </button>
 
           <button
@@ -835,7 +844,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-700 bg-white border border-zinc-300 rounded-md hover:bg-zinc-50 whitespace-nowrap shrink-0"
           >
             <Lock className="w-3.5 h-3.5" />
-            Fixed Activities
+            {t.weekly.fixedActivitiesBtn}
           </button>
 
           <button
@@ -844,7 +853,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-zinc-900 rounded-md hover:bg-zinc-800 whitespace-nowrap shrink-0"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            AI Schedule
+            {t.weekly.aiScheduleBtn}
           </button>
 
           {scheduleVersions.length > 0 && (
@@ -852,16 +861,16 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
               <button
                 type="button"
                 onClick={undoLastScheduleChange}
-                title="Undo last AI schedule change"
+                title={t.weekly.undoTitle}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 border-r border-zinc-200 whitespace-nowrap"
               >
                 <Undo2 className="w-3.5 h-3.5" />
-                Undo
+                {t.weekly.undoBtn}
               </button>
               <button
                 type="button"
                 onClick={() => setAiModalState({ open: true, mode: 'history' })}
-                title="View schedule version history"
+                title={t.weekly.historyTitle}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-mono text-zinc-700 hover:bg-zinc-100 whitespace-nowrap"
               >
                 <History className="w-3.5 h-3.5" />
@@ -874,7 +883,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
             <button
               type="button"
               onClick={goToPrevWeek}
-              aria-label="Previous week"
+              aria-label={t.weekly.prevWeekAria}
               className="px-2.5 py-1.5 text-zinc-700 hover:bg-zinc-100 border-r border-zinc-200 transition-colors"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -884,12 +893,12 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
               onClick={goToCurrentWeek}
               className="px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-100 transition-colors whitespace-nowrap"
             >
-              Today
+              {t.common.today}
             </button>
             <button
               type="button"
               onClick={goToNextWeek}
-              aria-label="Next week"
+              aria-label={t.weekly.nextWeekAria}
               className="px-2.5 py-1.5 text-zinc-700 hover:bg-zinc-100 border-l border-zinc-200 transition-colors"
             >
               <ChevronRight className="w-4 h-4" />
@@ -908,7 +917,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
             type="button"
             onClick={() => setPlacementError(null)}
             className="p-0.5 text-red-600 hover:text-red-900"
-            aria-label="Dismiss error"
+            aria-label={t.weekly.dismissErrorAria}
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -920,29 +929,27 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
         {/* Left Sidebar */}
         <aside className="bg-zinc-100/70 border border-zinc-200 rounded-lg p-3 space-y-4 lg:max-h-[820px] lg:overflow-y-auto">
           <div className="flex items-center justify-between px-0.5">
-            <h2 className="text-xs font-semibold text-zinc-800">Active Objectives</h2>
+            <h2 className="text-xs font-semibold text-zinc-800">{t.weekly.activeObjectives}</h2>
             <button
               type="button"
               onClick={onNewTask}
               className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-600 hover:text-zinc-900"
             >
               <Plus className="w-3 h-3" />
-              New
+              {t.weekly.newBtn}
             </button>
           </div>
 
           {tasks.length === 0 ? (
             <div className="bg-white border border-dashed border-zinc-300 rounded-md p-5 text-center">
-              <p className="text-xs font-medium text-zinc-700">No objectives created</p>
-              <p className="text-[11px] text-zinc-500 mt-1">
-                Create an objective and break it down into WBS steps to pull work into this week.
-              </p>
+              <p className="text-xs font-medium text-zinc-700">{t.weekly.emptyTitle}</p>
+              <p className="text-[11px] text-zinc-500 mt-1">{t.weekly.emptyDesc}</p>
               <button
                 type="button"
                 onClick={onNewTask}
                 className="mt-3 px-3 py-1.5 text-xs font-medium text-white bg-zinc-900 rounded hover:bg-zinc-800"
               >
-                Create Objective
+                {t.weekly.createObjective}
               </button>
             </div>
           ) : (
@@ -951,7 +958,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between px-0.5">
                   <span className="text-[11px] font-mono font-semibold text-zinc-900">
-                    WILL · Milestone This Week
+                    {t.weekly.willHeader}
                   </span>
                   <span className="text-[11px] font-mono tabular-nums text-zinc-500">
                     {willTasks.length}
@@ -959,11 +966,11 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                 </div>
                 {willTasks.length === 0 ? (
                   <div className="px-3 py-2.5 text-[11px] text-zinc-400 bg-white/60 border border-zinc-200/80 rounded-md">
-                    No active milestones fall inside this week.
+                    {t.weekly.noWill}
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {willTasks.map((t) => renderSidebarTaskCard(t, true))}
+                    {willTasks.map((tItem) => renderSidebarTaskCard(tItem, true))}
                   </div>
                 )}
               </div>
@@ -972,7 +979,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between px-0.5">
                   <span className="text-[11px] font-mono font-semibold text-zinc-600">
-                    Horizon · Other Objectives
+                    {t.weekly.horizonHeader}
                   </span>
                   <span className="text-[11px] font-mono tabular-nums text-zinc-500">
                     {horizonTasks.length}
@@ -980,11 +987,11 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                 </div>
                 {horizonTasks.length === 0 ? (
                   <div className="px-3 py-2.5 text-[11px] text-zinc-400 bg-white/60 border border-zinc-200/80 rounded-md">
-                    No other active objectives.
+                    {t.weekly.noHorizon}
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {horizonTasks.map((t) => renderSidebarTaskCard(t, false))}
+                    {horizonTasks.map((tItem) => renderSidebarTaskCard(tItem, false))}
                   </div>
                 )}
               </div>
@@ -997,14 +1004,14 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                     onClick={() => setShowCompletedSidebar((v) => !v)}
                     className="w-full flex items-center justify-between px-1 py-1 text-[11px] font-medium text-zinc-500 hover:text-zinc-800"
                   >
-                    <span>Completed objectives</span>
+                    <span>{t.weekly.completedToggle}</span>
                     <span className="font-mono tabular-nums">
-                      {showCompletedSidebar ? 'Hide' : `Show (${completedTasks.length})`}
+                      {showCompletedSidebar ? t.weekly.hide : t.weekly.show(completedTasks.length)}
                     </span>
                   </button>
                   {showCompletedSidebar && (
                     <div className="mt-2 space-y-2">
-                      {completedTasks.map((t) => renderSidebarTaskCard(t, false))}
+                      {completedTasks.map((tItem) => renderSidebarTaskCard(tItem, false))}
                     </div>
                   )}
                 </div>
@@ -1020,10 +1027,10 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
               {/* Day Headers */}
               <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] border-b border-zinc-200 bg-zinc-50/90">
                 <div className="py-2.5 px-2 text-[10px] font-mono text-zinc-400 border-r border-zinc-200 flex items-end justify-end">
-                  TIME
+                  {t.weekly.timeHeader}
                 </div>
                 {weekDays.map((dateStr) => {
-                  const hdr = formatDayHeader(dateStr);
+                  const hdr = formatDayHeader(dateStr, language);
                   const isToday = dateStr === todayStr;
                   const dayDeadlines = deadlinesByDay.get(dateStr) ?? [];
 
@@ -1058,9 +1065,11 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                             return (
                               <span
                                 key={`${dl.task.id}-${dl.deadline.id}-${idx}`}
-                                title={`Deadline: ${dl.task.name}${
-                                  dl.deadline.label ? ` — ${dl.deadline.label}` : ''
-                                } (${formatCompactDate(dl.deadline.date)})`}
+                                title={t.weekly.deadlineTooltip(
+                                  dl.task.name,
+                                  dl.deadline.label,
+                                  formatCompactDate(dl.deadline.date, language)
+                                )}
                                 className="inline-flex items-center gap-1 px-1 py-0.5 rounded text-[9px] font-mono bg-white border truncate max-w-full"
                                 style={{
                                   borderColor: sw.swatch,
@@ -1202,18 +1211,20 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                                   ? 'repeating-linear-gradient(-45deg, #f4f4f5, #f4f4f5 6px, #ececee 6px, #ececee 12px)'
                                   : 'repeating-linear-gradient(-45deg, #fafafa, #fafafa 6px, #f4f4f5 6px, #f4f4f5 12px)',
                               }}
-                              className={`absolute left-1 right-1 z-[8] rounded border px-1.5 py-1 flex flex-col justify-between overflow-hidden select-none cursor-pointer transition-colors hover:border-zinc-700 ${
+                              className={`group absolute left-1 right-1 z-[8] rounded border px-1.5 py-1 flex flex-col justify-between overflow-hidden select-none cursor-pointer transition-colors hover:border-zinc-700 ${
                                 isLinkDropTarget
                                   ? 'border-2 border-zinc-900 ring-2 ring-zinc-900/20'
                                   : fa.countsAsWorkingTime
                                   ? 'border-zinc-400 text-zinc-800'
                                   : 'border-zinc-300 text-zinc-500'
                               }`}
-                              title={`${fa.title} (${formatMinutesToTime(fa.startMinutes)}–${formatMinutesToTime(
-                                fa.endMinutes
-                              )}) · ${
-                                fa.countsAsWorkingTime ? 'Working time' : 'Break'
-                              }. Click to edit this occurrence or drop a WBS step to link.`}
+                              title={t.weekly.fixedTooltip(
+                                fa.title,
+                                `${formatMinutesToTime(fa.startMinutes)}–${formatMinutesToTime(
+                                  fa.endMinutes
+                                )}`,
+                                fa.countsAsWorkingTime
+                              )}
                             >
                               <div className="flex items-start justify-between gap-1 min-w-0">
                                 <div className="flex items-center gap-1 min-w-0">
@@ -1222,14 +1233,39 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                                     {fa.title}
                                   </span>
                                 </div>
-                                <span className="text-[9px] font-mono uppercase opacity-70 shrink-0">
-                                  {fa.countsAsWorkingTime ? 'WORK' : 'BREAK'}
-                                </span>
+                                <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                  <button
+                                    type="button"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setFixedModalState({ open: true, editId: fa.id });
+                                    }}
+                                    title={t.weekly.editFixedTitle}
+                                    aria-label={t.weekly.editFixedAria(fa.title)}
+                                    className="p-0.5 rounded bg-white/80 text-zinc-600 hover:text-zinc-950 hover:bg-white transition-colors"
+                                  >
+                                    <Pencil className="w-2.5 h-2.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      deleteFixedActivity(fa.id);
+                                    }}
+                                    title={t.weekly.deleteFixedTitle}
+                                    aria-label={t.weekly.deleteFixedAria(fa.title)}
+                                    className="p-0.5 rounded bg-white/80 text-zinc-600 hover:text-red-600 hover:bg-white transition-colors"
+                                  >
+                                    <Trash2 className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
                               </div>
 
                               {isLinkDropTarget && (
                                 <div className="text-[10px] font-semibold text-zinc-900 bg-white/90 rounded px-1 py-0.5 truncate">
-                                  Drop to link step
+                                  {t.weekly.dropToLink}
                                 </div>
                               )}
 
@@ -1237,6 +1273,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                                 <div
                                   className="space-y-0.5 overflow-y-auto pr-0.5"
                                   onClick={(e) => e.stopPropagation()}
+                                  onPointerDown={(e) => e.stopPropagation()}
                                 >
                                   {resolvedLinked.map((ls) => {
                                     const lt = taskMap.get(ls.taskId);
@@ -1280,8 +1317,8 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                                             unlinkStepFromFixedActivity(fa.id, ls.id);
                                           }}
                                           className="text-zinc-400 hover:text-red-600 shrink-0"
-                                          title="Unlink step from this occurrence"
-                                          aria-label={`Unlink ${ls.title}`}
+                                          title={t.weekly.unlinkTitle}
+                                          aria-label={t.weekly.unlinkAria(ls.title)}
                                         >
                                           <X className="w-2.5 h-2.5" />
                                         </button>
@@ -1325,7 +1362,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                                   ? `${formatMinutesToTime(activeDrag.targetStartMinutes)} – ${formatMinutesToTime(
                                       activeDrag.targetStartMinutes + activeDrag.step.estimatedMinutes
                                     )}`
-                                  : 'Blocked: conflict / dependency'}
+                                  : t.weekly.blockedConflict}
                               </div>
                             </div>
                           )}
@@ -1355,7 +1392,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                                   ? `${formatMinutesToTime(activeDrag.targetStartMinutes)} – ${formatMinutesToTime(
                                       activeDrag.targetStartMinutes + activeDrag.block.durationMinutes
                                     )}`
-                                  : 'Blocked: conflict / dependency'}
+                                  : t.weekly.blockedConflict}
                               </div>
                             </div>
                           )}
@@ -1452,7 +1489,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                                     }`}
                                     title={`${step.title} (${task.name})${
                                       step.executionState === 'done_variance' && step.varianceReason
-                                        ? ` — Variance: ${step.varianceReason}`
+                                        ? ` — ${t.weekly.stepTooltipVariance}: ${step.varianceReason}`
                                         : ''
                                     }`}
                                   >
@@ -1472,8 +1509,8 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                                     e.stopPropagation();
                                     unscheduleBlock(block.id);
                                   }}
-                                  title="Remove from weekly calendar"
-                                  aria-label={`Unschedule ${step.title}`}
+                                  title={t.weekly.removeCalendarTitle}
+                                  aria-label={t.weekly.unscheduleAria(step.title)}
                                   className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-0.5 rounded hover:bg-black/10 transition-opacity shrink-0"
                                 >
                                   <X className="w-3 h-3" />
@@ -1488,7 +1525,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                                   </span>
                                   {step.executionState === 'done_variance' && (
                                     <span className="text-[9px] font-semibold text-amber-800">
-                                      Variance
+                                      {t.weekly.varianceTag}
                                     </span>
                                   )}
                                 </div>
@@ -1510,7 +1547,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                                     previewDuration: block.durationMinutes,
                                   });
                                 }}
-                                title="Drag bottom edge to resize duration"
+                                title={t.weekly.resizeTitle}
                                 className="absolute left-0 right-0 bottom-0 h-2 cursor-ns-resize flex items-center justify-center opacity-0 group-hover:opacity-100"
                               >
                                 <span className="w-6 h-0.5 rounded-full bg-black/30" />
@@ -1547,8 +1584,12 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
 
           return (
             <div
-              onMouseEnter={cancelCloseFlyout}
+              onMouseEnter={() => {
+                isPointerInFlyoutRef.current = true;
+                cancelCloseFlyout();
+              }}
               onMouseLeave={() => {
+                isPointerInFlyoutRef.current = false;
                 if (pinnedTaskId === flyoutTask.id) return;
                 scheduleCloseFlyout();
               }}
@@ -1578,7 +1619,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                       setFlyout(null);
                     }}
                     className="p-0.5 text-zinc-400 hover:text-zinc-800 rounded shrink-0"
-                    aria-label="Close steps panel"
+                    aria-label={t.weekly.closeFlyoutAria}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -1587,20 +1628,22 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
 
               {taskSteps.length === 0 ? (
                 <div className="flex items-center justify-between gap-2 py-2 text-xs text-zinc-500">
-                  <span>No WBS steps yet</span>
+                  <span>{t.weekly.noStepsYet}</span>
                   <button
                     type="button"
                     onClick={() => openTaskInWBS(flyoutTask.id)}
                     className="inline-flex items-center gap-1 font-medium text-zinc-900 hover:underline"
                   >
                     <Layers className="w-3.5 h-3.5" />
-                    Add in WBS
+                    {t.weekly.addInWbs}
                   </button>
                 </div>
               ) : (
                 <div className="space-y-1.5 max-h-72 overflow-y-auto">
                   {taskSteps.map((step, idx) => {
                     const weekSchedCount = scheduledStepIdsInWeek.get(step.id) ?? 0;
+                    const weekLinkedCount = linkedStepIdsInWeek.get(step.id) ?? 0;
+                    const isPlacedInWwp = weekSchedCount > 0 || weekLinkedCount > 0;
                     const hasDeps = step.dependsOnStepIds.length > 0;
                     const pullLabel = getStepPullClassification(step, stepMap);
 
@@ -1625,19 +1668,46 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                             targetFixedActivity: null,
                           });
                         }}
-                        title="Drag onto a time slot to schedule, or onto a Fixed Activity to link"
+                        title={
+                          isPlacedInWwp
+                            ? t.weekly.alreadyPlacedTitle
+                            : t.weekly.dragToScheduleTitle
+                        }
                         className="flex items-center gap-2 px-2.5 py-1.5 rounded border text-xs cursor-grab active:cursor-grabbing select-none transition-opacity"
-                        style={{
-                          backgroundColor: swatch.bg,
-                          borderColor: swatch.border,
-                          color: swatch.text,
-                          opacity: step.completed ? 0.65 : 1,
-                        }}
+                        style={
+                          isPlacedInWwp
+                            ? {
+                                backgroundColor: '#f4f4f5',
+                                borderColor: '#d4d4d8',
+                                color: '#71717a',
+                                opacity: 0.72,
+                              }
+                            : {
+                                backgroundColor: swatch.bg,
+                                borderColor: swatch.border,
+                                color: swatch.text,
+                                opacity: step.completed ? 0.65 : 1,
+                              }
+                        }
                       >
                         <StepExecutionControl
                           executionState={step.executionState}
                           stepTitle={step.title}
                           varianceReason={step.varianceReason}
+                          onOverlayOpenChange={(open) => {
+                            openOverlayCountRef.current = Math.max(
+                              0,
+                              openOverlayCountRef.current + (open ? 1 : -1)
+                            );
+                            if (open) {
+                              cancelCloseFlyout();
+                            } else if (
+                              openOverlayCountRef.current === 0 &&
+                              pinnedTaskIdRef.current !== flyoutTask.id
+                            ) {
+                              scheduleCloseFlyout();
+                            }
+                          }}
                           onChangeState={(nextState, reason) =>
                             setStepExecutionState(step.id, nextState, reason, displayedWeekStart)
                           }
@@ -1658,18 +1728,26 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                         {/* Dynamic Pull Tag: ONLY SHOULD or CAN for incomplete 'Me' steps */}
                         {pullLabel === 'SHOULD' && (
                           <span
-                            title="Blocked upstream by an incomplete 'Others' step"
-                            className="px-1 py-0.5 text-[9px] font-mono font-semibold bg-amber-50 text-amber-800 border border-amber-300 rounded shrink-0"
+                            title={t.weekly.shouldTooltip}
+                            className={`px-1 py-0.5 text-[9px] font-mono font-semibold rounded shrink-0 border ${
+                              isPlacedInWwp
+                                ? 'bg-zinc-200/70 text-zinc-500 border-zinc-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}
                           >
-                            SHOULD
+                            {t.weekly.shouldTag}
                           </span>
                         )}
                         {pullLabel === 'CAN' && (
                           <span
-                            title="No upstream 'Others' blockers — ready to pull"
-                            className="px-1 py-0.5 text-[9px] font-mono font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300 rounded shrink-0"
+                            title={t.weekly.canTooltip}
+                            className={`px-1 py-0.5 text-[9px] font-mono font-semibold rounded shrink-0 border ${
+                              isPlacedInWwp
+                                ? 'bg-zinc-200/70 text-zinc-500 border-zinc-300'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                            }`}
                           >
-                            CAN
+                            {t.weekly.canTag}
                           </span>
                         )}
 
@@ -1683,30 +1761,35 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                             }}
                             title={
                               step.flowStatus === 'in_progress'
-                                ? 'In Progress (click to revert to Not Started)'
-                                : 'Mark In Progress'
+                                ? t.weekly.wipTooltip
+                                : t.weekly.startTooltip
                             }
                             className={`px-1 py-0.5 text-[9px] font-mono font-medium rounded border shrink-0 inline-flex items-center gap-0.5 ${
-                              step.flowStatus === 'in_progress'
+                              isPlacedInWwp
+                                ? 'bg-zinc-100 text-zinc-500 border-zinc-300 hover:border-zinc-500'
+                                : step.flowStatus === 'in_progress'
                                 ? 'bg-sky-100 text-sky-900 border-sky-300'
                                 : 'bg-white/70 text-zinc-600 border-zinc-300 hover:border-zinc-700'
                             }`}
                           >
                             <Play className="w-2 h-2" />
-                            {step.flowStatus === 'in_progress' ? 'WIP' : 'Start'}
+                            {step.flowStatus === 'in_progress' ? t.weekly.wipBtn : t.weekly.startBtn}
                           </button>
                         )}
 
                         {hasDeps && (
-                          <span title="Has predecessor dependencies" className="shrink-0">
+                          <span title={t.weekly.hasDepsTitle} className="shrink-0">
                             <Link2 className="w-3 h-3 opacity-60" />
                           </span>
                         )}
 
                         <span className="font-mono text-[10px] opacity-75 tabular-nums shrink-0">
-                          {step.responsibility === 'Others' ? 'Others · ' : ''}
+                          {step.responsibility === 'Others'
+                            ? `${t.common.responsibility.Others} · `
+                            : ''}
                           {formatDuration(step.estimatedMinutes)}
                           {weekSchedCount > 0 ? ` · ${weekSchedCount}×` : ''}
+                          {weekLinkedCount > 0 ? ` · ${t.weekly.linkedTag}` : ''}
                         </span>
                       </div>
                     );
@@ -1731,7 +1814,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
         >
           <span className="truncate">
             {activeDrag.targetFixedActivity
-              ? `Link to ${activeDrag.targetFixedActivity.title}`
+              ? t.weekly.linkToFixed(activeDrag.targetFixedActivity.title)
               : activeDrag.step.title}
           </span>
           <span className="font-mono text-[10px] opacity-75 shrink-0">
@@ -1756,20 +1839,24 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
             <div className="px-6 py-4 border-b border-zinc-200 flex items-center justify-between gap-4">
               <div>
                 <h2 id="wwp-variance-title" className="text-base font-semibold text-zinc-900">
-                  Week {isoWeekNum} Variance &amp; Execution Review
+                  {t.weekly.varianceModalTitle(isoWeekNum)}
                 </h2>
                 <p className="text-xs text-zinc-500 mt-0.5 tabular-nums">
                   {weekRangeLabel} ·{' '}
                   {weekPpcSummary.pct !== null
-                    ? `${weekPpcSummary.completed}/${weekPpcSummary.total} completed (${weekPpcSummary.pct}% PPC)`
-                    : 'No steps scheduled yet'}
+                    ? t.weekly.varianceModalStepsSummary(
+                        weekPpcSummary.completed,
+                        weekPpcSummary.total,
+                        weekPpcSummary.pct
+                      )
+                    : t.weekly.noStepsScheduledYet}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setVarianceModalOpen(false)}
                 className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-md"
-                aria-label="Close variance review"
+                aria-label={t.weekly.closeVarianceAria}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1781,7 +1868,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                   htmlFor="wwp-overall-variance"
                   className="block text-xs font-semibold text-zinc-800 mb-1.5"
                 >
-                  Weekly Reasons for Variance Summary
+                  {t.weekly.overallVarianceLabel}
                 </label>
                 <textarea
                   id="wwp-overall-variance"
@@ -1790,22 +1877,22 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                   onChange={(e) =>
                     updateWeekVarianceReason(displayedWeekStart, e.target.value)
                   }
-                  placeholder="Document root causes for missed commitments, unexpected rework, supplier blockers, or estimation variance..."
+                  placeholder={t.weekly.overallVariancePlaceholder}
                   className="w-full px-3 py-2 text-xs text-zinc-900 bg-white border border-zinc-300 rounded-md focus:outline-none focus:border-zinc-900 resize-none"
                 />
                 <p className="text-[11px] text-zinc-500 mt-1">
-                  Changes sync automatically to your read-only Plan Reliability Trend archive in Statistics.
+                  {t.weekly.overallVarianceHint}
                 </p>
               </div>
 
               <div className="space-y-2.5">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  Scheduled Steps Breakdown ({weekUniqueScheduledSteps.length})
+                  {t.weekly.breakdownHeading(weekUniqueScheduledSteps.length)}
                 </h3>
 
                 {weekUniqueScheduledSteps.length === 0 ? (
                   <div className="p-5 border border-dashed border-zinc-300 rounded-md text-center text-xs text-zinc-500">
-                    No steps scheduled for Week {isoWeekNum}.
+                    {t.weekly.noStepsInWeek(isoWeekNum)}
                   </div>
                 ) : (
                   <div className="divide-y divide-zinc-200 border border-zinc-200 rounded-md">
@@ -1854,16 +1941,16 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                               {step.executionState === 'done_expected' ? (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 rounded">
                                   <CheckCircle2 className="w-3 h-3" />
-                                  Done — As Expected
+                                  {t.execution.doneExpected}
                                 </span>
                               ) : step.executionState === 'done_variance' ? (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 rounded">
                                   <AlertTriangle className="w-3 h-3" />
-                                  Done — Variance
+                                  {t.execution.doneVarianceShort}
                                 </span>
                               ) : (
                                 <span className="px-1.5 py-0.5 text-[10px] font-medium bg-zinc-100 text-zinc-700 border border-zinc-200 rounded">
-                                  Not Done
+                                  {t.execution.notDone}
                                 </span>
                               )}
                             </span>
@@ -1878,7 +1965,7 @@ export const WeeklyPlanTab: React.FC<WeeklyPlanTabProps> = ({ onNewTask }) => {
                               onChange={(e) =>
                                 updateStepVariance(displayedWeekStart, step.id, e.target.value)
                               }
-                              placeholder="Optional step-level Reason for Variance..."
+                              placeholder={t.weekly.stepVariancePlaceholder}
                               className="w-full px-2.5 py-1 text-[11px] text-zinc-900 bg-zinc-50 border border-zinc-200 rounded focus:outline-none focus:border-zinc-900"
                             />
                           )}

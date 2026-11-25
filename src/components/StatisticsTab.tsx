@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Circle,
   Lock,
+  Target,
   TrendingUp,
 } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext';
@@ -21,7 +22,11 @@ import {
   getISOWeekNumber,
   getStartOfWeek,
 } from '../utils/dateUtils';
-import { getFixedActivitiesForDate } from '../utils/schedulingUtils';
+import {
+  computeWeeklyReliabilityMetrics,
+  getFixedActivitiesForDate,
+} from '../utils/schedulingUtils';
+import { useLanguage } from '../i18n/LanguageContext';
 
 type PeriodFilterMode = 'week' | 'month' | 'custom';
 
@@ -38,6 +43,7 @@ export const StatisticsTab: React.FC = () => {
     updateStep,
     updateTask,
   } = useAppState();
+  const { language, t } = useLanguage();
 
   const [statsWeekStart, setStatsWeekStart] = useState<string>(displayedWeekStart);
 
@@ -67,7 +73,23 @@ export const StatisticsTab: React.FC = () => {
     [ppcRecords]
   );
 
-  // ==================== A. PLAN RELIABILITY TREND (PPC %) ====================
+  // ==================== 0. OBJECTIVE STATUS DISTRIBUTION ====================
+  const objectiveStatusStats = useMemo(() => {
+    const total = tasks.length;
+    const todoCount = tasks.filter((tk) => tk.status === 'todo').length;
+    const inProgressCount = tasks.filter((tk) => tk.status === 'in_progress').length;
+    const completedCount = tasks.filter((tk) => tk.status === 'completed').length;
+    const pct = (count: number) => (total > 0 ? Math.round((count / total) * 100) : 0);
+
+    return {
+      total,
+      todo: { count: todoCount, pct: pct(todoCount) },
+      inProgress: { count: inProgressCount, pct: pct(inProgressCount) },
+      completed: { count: completedCount, pct: pct(completedCount) },
+    };
+  }, [tasks]);
+
+  // ==================== A. PLAN RELIABILITY TREND (PPC, PPCO, CL) ====================
   const ppcTimeline = useMemo(() => {
     const weeks = Array.from({ length: 8 }, (_, idx) =>
       addDays(statsWeekStart, (idx - 7) * 7)
@@ -77,16 +99,41 @@ export const StatisticsTab: React.FC = () => {
       const weekEnd = addDays(ws, 6);
       const isoWeek = getISOWeekNumber(addDays(ws, 4));
       const record = ppcRecordMap.get(ws);
+      const liveReliability = computeWeeklyReliabilityMetrics({
+        weekStart: ws,
+        tasks,
+        steps,
+        scheduledBlocks,
+        fixedActivities,
+      });
+
+      const resolvePpcoAndCl = () => {
+        const snap = record?.snapshot;
+        if (snap && snap.ppcoTotal !== undefined && snap.clShouldTotal !== undefined) {
+          return {
+            ppcoPercent: snap.ppcoPercent ?? null,
+            ppcoCompleted: snap.ppcoCompleted ?? 0,
+            ppcoTotal: snap.ppcoTotal ?? 0,
+            clPercent: snap.clPercent ?? null,
+            clCommitted: snap.clCommitted ?? 0,
+            clShouldTotal: snap.clShouldTotal ?? 0,
+          };
+        }
+        return liveReliability;
+      };
+
+      const reliability = resolvePpcoAndCl();
 
       // Locked historical snapshot is immutable so past values never change retrospectively
       if (record?.snapshot?.locked) {
         return {
           weekStart: ws,
           isoWeek,
-          rangeLabel: formatWeekRange(ws),
+          rangeLabel: formatWeekRange(ws, language),
           plannedCount: record.snapshot.plannedCount,
           completedCount: record.snapshot.completedCount,
           ppcPercent: record.snapshot.plannedCount > 0 ? record.snapshot.ppcPercent : null,
+          ...reliability,
           completedItems: record.snapshot.completedItems ?? [],
           incompleteItems: record.snapshot.incompleteItems ?? [],
           reasonsForVariance: record.reasonsForVariance ?? '',
@@ -110,7 +157,7 @@ export const StatisticsTab: React.FC = () => {
             stepId: st.id,
             taskId: st.taskId,
             stepTitle: st.title,
-            taskName: tk?.name ?? 'Objective',
+            taskName: tk?.name ?? t.stats.objectiveFallback,
             executionState: st.executionState,
             varianceReason: st.varianceReason || undefined,
           };
@@ -125,10 +172,11 @@ export const StatisticsTab: React.FC = () => {
         return {
           weekStart: ws,
           isoWeek,
-          rangeLabel: formatWeekRange(ws),
+          rangeLabel: formatWeekRange(ws, language),
           plannedCount,
           completedCount,
           ppcPercent,
+          ...reliability,
           completedItems,
           incompleteItems,
           reasonsForVariance: record?.reasonsForVariance ?? '',
@@ -141,10 +189,11 @@ export const StatisticsTab: React.FC = () => {
         return {
           weekStart: ws,
           isoWeek,
-          rangeLabel: formatWeekRange(ws),
+          rangeLabel: formatWeekRange(ws, language),
           plannedCount: record.snapshot.plannedCount,
           completedCount: record.snapshot.completedCount,
           ppcPercent: record.snapshot.ppcPercent,
+          ...reliability,
           completedItems: record.snapshot.completedItems ?? [],
           incompleteItems: record.snapshot.incompleteItems ?? [],
           reasonsForVariance: record.reasonsForVariance ?? '',
@@ -156,10 +205,11 @@ export const StatisticsTab: React.FC = () => {
       return {
         weekStart: ws,
         isoWeek,
-        rangeLabel: formatWeekRange(ws),
+        rangeLabel: formatWeekRange(ws, language),
         plannedCount: 0,
         completedCount: 0,
         ppcPercent: null as number | null,
+        ...reliability,
         completedItems: [] as PPCItemSummary[],
         incompleteItems: [] as PPCItemSummary[],
         reasonsForVariance: record?.reasonsForVariance ?? '',
@@ -167,9 +217,9 @@ export const StatisticsTab: React.FC = () => {
         locked: false,
       };
     });
-  }, [statsWeekStart, ppcRecordMap, scheduledBlocks, stepMap, taskMap]);
+  }, [statsWeekStart, ppcRecordMap, scheduledBlocks, fixedActivities, steps, tasks, stepMap, taskMap, language, t]);
 
-  // Historical Average PPC across all recorded historical weeks
+  // Historical Averages across recorded / displayed weeks
   const historicalAvgPpc = useMemo(() => {
     const allWithData = new Map<string, number>();
     for (const r of ppcRecords) {
@@ -186,6 +236,22 @@ export const StatisticsTab: React.FC = () => {
     const vals = Array.from(allWithData.values());
     return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
   }, [ppcRecords, ppcTimeline]);
+
+  const historicalAvgPpco = useMemo(() => {
+    const vals = ppcTimeline
+      .map((w) => w.ppcoPercent)
+      .filter((v): v is number => v !== null);
+    if (vals.length === 0) return null;
+    return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+  }, [ppcTimeline]);
+
+  const historicalAvgCl = useMemo(() => {
+    const vals = ppcTimeline
+      .map((w) => w.clPercent)
+      .filter((v): v is number => v !== null);
+    if (vals.length === 0) return null;
+    return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+  }, [ppcTimeline]);
 
   const currentShownPpcWeek = pinnedPpcWeek ?? activePpcWeek ?? statsWeekStart;
   const activePpcEntry =
@@ -271,7 +337,7 @@ export const StatisticsTab: React.FC = () => {
   }, [cfdSnapshots, cfdDateBounds]);
 
   const cfdGeometry = useMemo(() => {
-    const width = 760;
+    const width = 1100;
     const height = 220;
     const padL = 36;
     const padR = 16;
@@ -395,22 +461,25 @@ export const StatisticsTab: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-zinc-200">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900">
-            Lean Flow &amp; Reliability Statistics
+            {t.stats.title}
           </h1>
           <p className="text-xs text-zinc-500 mt-0.5 tabular-nums">
-            Plan Reliability Trend (PPC), Value-Added Ratio (VA / NNVA / NVA), and Cumulative Flow Diagram (CFD)
+            {t.stats.subtitle}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <span className="text-xs font-mono tabular-nums text-zinc-600">
-            Week {getISOWeekNumber(addDays(statsWeekStart, 4))} · {formatWeekRange(statsWeekStart)}
+            {t.stats.weekPrefix(
+              getISOWeekNumber(addDays(statsWeekStart, 4)),
+              formatWeekRange(statsWeekStart, language)
+            )}
           </span>
           <div className="inline-flex items-center border border-zinc-300 rounded-md bg-white overflow-hidden shrink-0">
             <button
               type="button"
               onClick={() => setStatsWeekStart((prev) => addDays(prev, -7))}
-              aria-label="Previous statistics week"
+              aria-label={t.stats.prevWeekAria}
               className="px-2.5 py-1.5 text-zinc-700 hover:bg-zinc-100 border-r border-zinc-200"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -420,12 +489,12 @@ export const StatisticsTab: React.FC = () => {
               onClick={() => setStatsWeekStart(getStartOfWeek(todayStr))}
               className="px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-100 whitespace-nowrap"
             >
-              Current
+              {t.common.current}
             </button>
             <button
               type="button"
               onClick={() => setStatsWeekStart((prev) => addDays(prev, 7))}
-              aria-label="Next statistics week"
+              aria-label={t.stats.nextWeekAria}
               className="px-2.5 py-1.5 text-zinc-700 hover:bg-zinc-100 border-l border-zinc-200"
             >
               <ChevronRight className="w-4 h-4" />
@@ -434,188 +503,392 @@ export const StatisticsTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Top Row: Graph A (Plan Reliability Trend) + Graph B (NVA Distribution) */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-        {/* GRAPH A: Plan Reliability Trend (PPC) */}
-        <section className="bg-white border border-zinc-200 rounded-lg p-5">
-          <div className="flex items-start justify-between gap-4 pb-4 border-b border-zinc-100">
-            <div>
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-zinc-700" />
-                <h2 className="text-sm font-semibold text-zinc-900">
-                  A. Plan Reliability Trend (PPC)
-                </h2>
-              </div>
-              <p className="text-xs text-zinc-500 mt-0.5">
-                Immutable historical weekly PPC (%) with average baseline. Hover or click a week to inspect details &amp; variance.
-              </p>
+      {/* Objective Status Distribution (Replaces Kanban Overview) */}
+      <section className="w-full bg-white border border-zinc-200 rounded-lg p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-zinc-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <Target className="w-4 h-4 text-zinc-700" />
+              <h2 className="text-sm font-semibold text-zinc-900">
+                {t.stats.statusOverviewTitle}
+              </h2>
             </div>
-            <div className="text-right tabular-nums shrink-0">
-              <div className="text-lg font-mono font-semibold text-zinc-900">
-                {historicalAvgPpc !== null ? `${historicalAvgPpc}%` : '—'}
+            <p className="text-xs text-zinc-500 mt-0.5 tabular-nums">
+              {t.stats.statusOverviewDesc(objectiveStatusStats.total)}
+            </p>
+          </div>
+          <div className="flex items-center gap-4 text-[11px] text-zinc-600">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-zinc-400" />
+              {t.common.status.todo}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-sky-500" />
+              {t.common.status.in_progress}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-600" />
+              {t.common.status.completed}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-4">
+          <div className="h-5 w-full rounded-md overflow-hidden border border-zinc-200 bg-zinc-100 flex">
+            {objectiveStatusStats.total === 0 ? (
+              <div className="w-full flex items-center justify-center text-[11px] text-zinc-400">
+                {t.stats.noObjectivesYet}
               </div>
-              <div className="text-[10px] text-zinc-500">Historical avg</div>
-            </div>
+            ) : (
+              <>
+                {objectiveStatusStats.completed.count > 0 && (
+                  <div
+                    style={{
+                      width: `${(objectiveStatusStats.completed.count / objectiveStatusStats.total) * 100}%`,
+                    }}
+                    className="h-full bg-emerald-600 transition-all"
+                    title={`${t.common.status.completed}: ${objectiveStatusStats.completed.pct}%`}
+                  />
+                )}
+                {objectiveStatusStats.inProgress.count > 0 && (
+                  <div
+                    style={{
+                      width: `${(objectiveStatusStats.inProgress.count / objectiveStatusStats.total) * 100}%`,
+                    }}
+                    className="h-full bg-sky-500 transition-all"
+                    title={`${t.common.status.in_progress}: ${objectiveStatusStats.inProgress.pct}%`}
+                  />
+                )}
+                {objectiveStatusStats.todo.count > 0 && (
+                  <div
+                    style={{
+                      width: `${(objectiveStatusStats.todo.count / objectiveStatusStats.total) * 100}%`,
+                    }}
+                    className="h-full bg-zinc-400 transition-all"
+                    title={`${t.common.status.todo}: ${objectiveStatusStats.todo.pct}%`}
+                  />
+                )}
+              </>
+            )}
           </div>
 
-          {/* Chart */}
-          <div className="mt-5">
-            <div className="relative h-48 flex items-end gap-2 pt-6 pb-1 px-2 border-b border-zinc-200">
-              {/* Static 100% / 50% grid lines */}
-              {[100, 50].map((pct) => (
-                <div
-                  key={pct}
-                  aria-hidden="true"
-                  style={{ bottom: `${(pct / 100) * 140}px` }}
-                  className="absolute left-0 right-0 border-t border-dashed border-zinc-200 pointer-events-none"
-                >
-                  <span className="text-[9px] font-mono text-zinc-400 bg-white pr-1 -mt-2 inline-block">
-                    {pct}%
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+            {[
+              {
+                key: 'todo',
+                label: t.common.status.todo,
+                dotClass: 'bg-zinc-400',
+                stat: objectiveStatusStats.todo,
+              },
+              {
+                key: 'in_progress',
+                label: t.common.status.in_progress,
+                dotClass: 'bg-sky-500',
+                stat: objectiveStatusStats.inProgress,
+              },
+              {
+                key: 'completed',
+                label: t.common.status.completed,
+                dotClass: 'bg-emerald-600',
+                stat: objectiveStatusStats.completed,
+              },
+            ].map((row) => (
+              <div
+                key={row.key}
+                className="p-3.5 border border-zinc-200 rounded-md bg-zinc-50/60"
+              >
+                <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-600">
+                  <span className={`w-2 h-2 rounded-sm ${row.dotClass}`} />
+                  {row.label}
+                </div>
+                <div className="mt-1.5 flex items-baseline justify-between gap-2 tabular-nums">
+                  <span className="text-xl font-mono font-semibold text-zinc-900">
+                    {row.stat.pct}%
+                  </span>
+                  <span className="text-xs font-mono text-zinc-500">
+                    {t.stats.objectivesCountRatio(row.stat.count, objectiveStatusStats.total)}
                   </span>
                 </div>
-              ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-              {/* Historical Average Reference Line */}
-              {historicalAvgPpc !== null && (
-                <div
-                  aria-hidden="true"
-                  style={{ bottom: `${(historicalAvgPpc / 100) * 140}px` }}
-                  className="absolute left-0 right-0 border-t-2 border-dashed border-sky-600/80 pointer-events-none z-20 flex justify-end"
-                >
-                  <span className="text-[10px] font-mono font-semibold text-sky-800 bg-white/95 px-1 -mt-4 inline-block">
-                    Hist Avg {historicalAvgPpc}%
-                  </span>
+      {/* GRAPH A: Plan Reliability Trend (PPC · PPCO · CL) — Full Width */}
+      <section className="w-full bg-white border border-zinc-200 rounded-lg p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-zinc-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-zinc-700" />
+              <h2 className="text-sm font-semibold text-zinc-900">
+                {t.stats.ppcTitle}
+              </h2>
+            </div>
+            <p className="text-xs text-zinc-500 mt-0.5 max-w-3xl">
+              {t.stats.ppcDesc}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-5 tabular-nums shrink-0">
+            <div className="flex flex-wrap items-center gap-4 text-[11px] text-zinc-600">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-zinc-800" />
+                {t.stats.seriesPpc}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-emerald-600" />
+                {t.stats.seriesPpco}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-sky-600" />
+                {t.stats.seriesCl}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-4 pl-4 border-l border-zinc-200">
+              <div className="text-right">
+                <div className="text-sm font-mono font-semibold text-zinc-900">
+                  {historicalAvgPpc !== null ? `${historicalAvgPpc}%` : '—'}
                 </div>
-              )}
+                <div className="text-[10px] text-zinc-500">{t.stats.avgPpcLabel}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-mono font-semibold text-emerald-700">
+                  {historicalAvgPpco !== null ? `${historicalAvgPpco}%` : '—'}
+                </div>
+                <div className="text-[10px] text-zinc-500">{t.stats.avgPpcoLabel}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-mono font-semibold text-sky-700">
+                  {historicalAvgCl !== null ? `${historicalAvgCl}%` : '—'}
+                </div>
+                <div className="text-[10px] text-zinc-500">{t.stats.avgClLabel}</div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-              {/* Subtle SVG Trend Polyline behind bars */}
-              {ppcPointsSvg && (
-                <svg
-                  viewBox="0 0 100 100"
-                  preserveAspectRatio="none"
-                  className="absolute left-2 right-2 bottom-1 h-[140px] w-[calc(100%-1rem)] pointer-events-none z-[5]"
+        {/* Full-Width Grouped Bar + Trend Chart */}
+        <div className="mt-5">
+          <div className="relative h-56 flex items-end gap-3 pt-7 pb-1 px-3 border-b border-zinc-200">
+            {/* Static 100% / 50% grid lines */}
+            {[100, 50].map((pct) => (
+              <div
+                key={pct}
+                aria-hidden="true"
+                style={{ bottom: `${(pct / 100) * 164}px` }}
+                className="absolute left-0 right-0 border-t border-dashed border-zinc-200 pointer-events-none"
+              >
+                <span className="text-[9px] font-mono text-zinc-400 bg-white pr-1 -mt-2 inline-block">
+                  {pct}%
+                </span>
+              </div>
+            ))}
+
+            {/* Historical Average PPC Reference Line */}
+            {historicalAvgPpc !== null && (
+              <div
+                aria-hidden="true"
+                style={{ bottom: `${(historicalAvgPpc / 100) * 164}px` }}
+                className="absolute left-0 right-0 border-t-2 border-dashed border-zinc-500/50 pointer-events-none z-20 flex justify-end"
+              >
+                <span className="text-[10px] font-mono font-semibold text-zinc-700 bg-white/95 px-1.5 -mt-4 inline-block">
+                  {t.stats.histAvgLine(historicalAvgPpc)}
+                </span>
+              </div>
+            )}
+
+            {/* Subtle PPC Trend Polyline */}
+            {ppcPointsSvg && (
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                className="absolute left-3 right-3 bottom-1 h-[164px] w-[calc(100%-1.5rem)] pointer-events-none z-[5]"
+              >
+                <polyline
+                  fill="none"
+                  stroke="#52525b"
+                  strokeOpacity="0.45"
+                  strokeWidth="1.2"
+                  vectorEffect="non-scaling-stroke"
+                  points={ppcPointsSvg}
+                />
+              </svg>
+            )}
+
+            {ppcTimeline.map((week) => {
+              const isSelected = currentShownPpcWeek === week.weekStart;
+              const hasPpc = week.ppcPercent !== null;
+              const hasPpco = week.ppcoPercent !== null;
+              const hasCl = week.clPercent !== null;
+              const barH = (val: number | null) =>
+                val !== null ? Math.max(8, Math.round((val / 100) * 164)) : 4;
+              const hasVarianceNote =
+                Boolean(week.reasonsForVariance.trim()) ||
+                week.stepVariances.some((sv) => sv.reason.trim().length > 0);
+
+              return (
+                <div
+                  key={week.weekStart}
+                  onMouseEnter={() => {
+                    cancelPpcClose();
+                    setActivePpcWeek(week.weekStart);
+                  }}
+                  onMouseLeave={schedulePpcClose}
+                  onClick={() =>
+                    setPinnedPpcWeek((prev) =>
+                      prev === week.weekStart ? null : week.weekStart
+                    )
+                  }
+                  className={`flex-1 flex flex-col items-center justify-end h-full cursor-pointer group relative z-10 rounded-t px-1 transition-colors ${
+                    isSelected ? 'bg-zinc-100/70' : 'hover:bg-zinc-50/80'
+                  }`}
                 >
-                  <polyline
-                    fill="none"
-                    stroke="#52525b"
-                    strokeWidth="1.4"
-                    vectorEffect="non-scaling-stroke"
-                    points={ppcPointsSvg}
-                  />
-                </svg>
-              )}
+                  <div className="w-full flex items-end justify-center gap-1.5">
+                    {/* PPC Bar */}
+                    <div className="flex flex-col items-center flex-1 max-w-[26px]">
+                      <span className="text-[10px] font-mono tabular-nums text-zinc-800 mb-0.5 leading-none">
+                        {hasPpc ? `${week.ppcPercent}` : '·'}
+                      </span>
+                      <div
+                        style={{ height: `${barH(week.ppcPercent)}px` }}
+                        className={`w-full rounded-t transition-all ${
+                          !hasPpc
+                            ? 'bg-zinc-100 border border-dashed border-zinc-300'
+                            : isSelected
+                            ? 'bg-zinc-900'
+                            : 'bg-zinc-700/85 group-hover:bg-zinc-900'
+                        }`}
+                      />
+                    </div>
 
-              {ppcTimeline.map((week) => {
-                const isSelected = currentShownPpcWeek === week.weekStart;
-                const hasData = week.ppcPercent !== null;
-                const barHeightPx = hasData
-                  ? Math.max(8, Math.round(((week.ppcPercent ?? 0) / 100) * 140))
-                  : 4;
-                const hasVarianceNote =
-                  Boolean(week.reasonsForVariance.trim()) ||
-                  week.stepVariances.some((sv) => sv.reason.trim().length > 0);
+                    {/* PPCO Bar */}
+                    <div className="flex flex-col items-center flex-1 max-w-[26px]">
+                      <span className="text-[10px] font-mono tabular-nums text-emerald-700 mb-0.5 leading-none">
+                        {hasPpco ? `${week.ppcoPercent}` : '·'}
+                      </span>
+                      <div
+                        style={{ height: `${barH(week.ppcoPercent)}px` }}
+                        className={`w-full rounded-t transition-all ${
+                          !hasPpco
+                            ? 'bg-emerald-50/70 border border-dashed border-emerald-200'
+                            : isSelected
+                            ? 'bg-emerald-600'
+                            : 'bg-emerald-500/85 group-hover:bg-emerald-600'
+                        }`}
+                      />
+                    </div>
 
-                return (
-                  <div
-                    key={week.weekStart}
-                    onMouseEnter={() => {
-                      cancelPpcClose();
-                      setActivePpcWeek(week.weekStart);
-                    }}
-                    onMouseLeave={schedulePpcClose}
-                    onClick={() =>
-                      setPinnedPpcWeek((prev) =>
-                        prev === week.weekStart ? null : week.weekStart
-                      )
-                    }
-                    className="flex-1 flex flex-col items-center justify-end h-full cursor-pointer group relative z-10"
-                  >
-                    <span className="text-[10px] font-mono tabular-nums text-zinc-700 mb-1">
-                      {hasData ? `${week.ppcPercent}%` : '·'}
-                    </span>
-
-                    <div
-                      style={{ height: `${barHeightPx}px` }}
-                      className={`w-full max-w-[38px] rounded-t transition-all ${
-                        !hasData
-                          ? 'bg-zinc-100 border border-dashed border-zinc-300'
-                          : isSelected
-                          ? 'bg-zinc-900'
-                          : 'bg-zinc-400/85 group-hover:bg-zinc-700'
-                      }`}
-                    />
-
-                    <div className="h-2.5 flex items-center justify-center mt-0.5 gap-0.5">
-                      {hasVarianceNote && (
-                        <span
-                          className="w-1.5 h-1.5 rounded-full bg-amber-500"
-                          title="Variance reason recorded"
-                        />
-                      )}
-                      {week.locked && (
-                        <span title="Locked historical snapshot">
-                          <Lock className="w-2.5 h-2.5 text-zinc-400" />
-                        </span>
-                      )}
+                    {/* CL Bar */}
+                    <div className="flex flex-col items-center flex-1 max-w-[26px]">
+                      <span className="text-[10px] font-mono tabular-nums text-sky-700 mb-0.5 leading-none">
+                        {hasCl ? `${week.clPercent}` : '·'}
+                      </span>
+                      <div
+                        style={{ height: `${barH(week.clPercent)}px` }}
+                        className={`w-full rounded-t transition-all ${
+                          !hasCl
+                            ? 'bg-sky-50/70 border border-dashed border-sky-200'
+                            : isSelected
+                            ? 'bg-sky-600'
+                            : 'bg-sky-500/85 group-hover:bg-sky-600'
+                        }`}
+                      />
                     </div>
                   </div>
-                );
-              })}
-            </div>
 
-            {/* X-Axis Labels */}
-            <div className="flex gap-2 px-2 mt-1.5">
-              {ppcTimeline.map((week) => {
-                const isSelected = currentShownPpcWeek === week.weekStart;
-                return (
-                  <div
-                    key={week.weekStart}
-                    className={`flex-1 text-center text-[10px] font-mono tabular-nums ${
-                      isSelected ? 'font-semibold text-zinc-900' : 'text-zinc-500'
-                    }`}
-                  >
-                    W{week.isoWeek}
+                  <div className="h-2.5 flex items-center justify-center mt-0.5 gap-0.5">
+                    {hasVarianceNote && (
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-amber-500"
+                        title={t.stats.varianceNoteTitle}
+                      />
+                    )}
+                    {week.locked && (
+                      <span title={t.stats.lockedSnapshotTitle}>
+                        <Lock className="w-2.5 h-2.5 text-zinc-400" />
+                      </span>
+                    )}
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Read-Only Hover / Pinned Week Breakdown */}
-          {activePpcEntry && (
-            <div
-              onMouseEnter={cancelPpcClose}
-              onMouseLeave={schedulePpcClose}
-              className="mt-4 p-3.5 bg-zinc-50 border border-zinc-200 rounded-md space-y-3"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-zinc-200/80">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-zinc-900 tabular-nums">
-                    Week {activePpcEntry.isoWeek} · {activePpcEntry.rangeLabel}
+          {/* X-Axis Labels */}
+          <div className="flex gap-3 px-3 mt-1.5">
+            {ppcTimeline.map((week) => {
+              const isSelected = currentShownPpcWeek === week.weekStart;
+              return (
+                <div
+                  key={week.weekStart}
+                  className={`flex-1 text-center text-[10px] font-mono tabular-nums ${
+                    isSelected ? 'font-semibold text-zinc-900' : 'text-zinc-500'
+                  }`}
+                >
+                  {t.stats.weekShortPrefix}{week.isoWeek}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Read-Only Hover / Pinned Week Breakdown */}
+        {activePpcEntry && (
+          <div
+            onMouseEnter={cancelPpcClose}
+            onMouseLeave={schedulePpcClose}
+            className="mt-4 p-3.5 bg-zinc-50 border border-zinc-200 rounded-md space-y-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-zinc-200/80">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-zinc-900 tabular-nums">
+                  {t.stats.weekPrefix(activePpcEntry.isoWeek, activePpcEntry.rangeLabel)}
+                </span>
+                {activePpcEntry.locked && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono text-zinc-600 bg-white border border-zinc-200 rounded">
+                    <Lock className="w-2.5 h-2.5" />
+                    {t.stats.lockedBadge}
                   </span>
-                  {activePpcEntry.locked && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono text-zinc-600 bg-white border border-zinc-200 rounded">
-                      <Lock className="w-2.5 h-2.5" />
-                      Locked
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs font-mono tabular-nums text-zinc-700 font-semibold">
-                  {activePpcEntry.ppcPercent !== null
-                    ? `${activePpcEntry.completedCount}/${activePpcEntry.plannedCount} completed (${activePpcEntry.ppcPercent}%)`
-                    : 'No planned commitments'}
-                </div>
+                )}
               </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-mono tabular-nums font-semibold">
+                <span className="text-zinc-800">
+                  {activePpcEntry.ppcPercent !== null
+                    ? t.stats.completedOfPlanned(
+                        activePpcEntry.completedCount,
+                        activePpcEntry.plannedCount,
+                        activePpcEntry.ppcPercent
+                      )
+                    : t.stats.noPlannedCommitments}
+                </span>
+                <span className="text-emerald-700">
+                  {t.stats.ppcoSummary(
+                    activePpcEntry.ppcoCompleted,
+                    activePpcEntry.ppcoTotal,
+                    activePpcEntry.ppcoPercent
+                  )}
+                </span>
+                <span className="text-sky-700">
+                  {t.stats.clSummary(
+                    activePpcEntry.clCommitted,
+                    activePpcEntry.clShouldTotal,
+                    activePpcEntry.clPercent
+                  )}
+                </span>
+              </div>
+            </div>
 
               {(activePpcEntry.completedItems.length > 0 ||
                 activePpcEntry.incompleteItems.length > 0) && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
                   <div>
                     <div className="font-semibold text-emerald-800 mb-1">
-                      Completed ({activePpcEntry.completedItems.length})
+                      {t.stats.completedHeading(activePpcEntry.completedItems.length)}
                     </div>
                     {activePpcEntry.completedItems.length === 0 ? (
-                      <div className="text-zinc-400">None</div>
+                      <div className="text-zinc-400">{t.common.none}</div>
                     ) : (
                       <ul className="space-y-1 max-h-28 overflow-y-auto pr-1">
                         {activePpcEntry.completedItems.map((item) => (
@@ -637,10 +910,10 @@ export const StatisticsTab: React.FC = () => {
 
                   <div>
                     <div className="font-semibold text-zinc-700 mb-1">
-                      Incomplete ({activePpcEntry.incompleteItems.length})
+                      {t.stats.incompleteHeading(activePpcEntry.incompleteItems.length)}
                     </div>
                     {activePpcEntry.incompleteItems.length === 0 ? (
-                      <div className="text-zinc-400">None</div>
+                      <div className="text-zinc-400">{t.common.none}</div>
                     ) : (
                       <ul className="space-y-1 max-h-28 overflow-y-auto pr-1">
                         {activePpcEntry.incompleteItems.map((item) => (
@@ -661,10 +934,10 @@ export const StatisticsTab: React.FC = () => {
               <div className="pt-2 border-t border-zinc-200/80 space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-semibold text-zinc-700">
-                    Reasons for Variance
+                    {t.stats.reasonsForVariance}
                   </span>
                   <span className="text-[10px] text-zinc-400">
-                    Edit in Weekly Work Plan → Variance &amp; Review
+                    {t.stats.editHint}
                   </span>
                 </div>
 
@@ -674,7 +947,7 @@ export const StatisticsTab: React.FC = () => {
                   </p>
                 ) : (
                   <p className="text-[11px] text-zinc-400 italic">
-                    No weekly variance note recorded.
+                    {t.stats.noWeeklyVarianceNote}
                   </p>
                 )}
 
@@ -697,17 +970,17 @@ export const StatisticsTab: React.FC = () => {
           )}
         </section>
 
-        {/* GRAPH B: NVA Time Distribution */}
-        <section className="bg-white border border-zinc-200 rounded-lg p-5">
+        {/* GRAPH B: NVA Time Distribution — Full Width */}
+        <section className="w-full bg-white border border-zinc-200 rounded-lg p-5">
           <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-zinc-100">
             <div>
               <h2 className="text-sm font-semibold text-zinc-900">
-                B. Value-Added vs Non-Value-Added Time
+                {t.stats.nvaTitle}
               </h2>
               <p className="text-xs text-zinc-500 mt-0.5 tabular-nums">
-                {formatShortDate(nvaDateBounds.from)} – {formatShortDate(nvaDateBounds.to)} ·{' '}
+                {formatShortDate(nvaDateBounds.from, language)} – {formatShortDate(nvaDateBounds.to, language)} ·{' '}
                 <span className="font-mono text-zinc-700">
-                  {formatDuration(nvaSummary.totalMinutes)} total classified
+                  {t.stats.totalClassified(formatDuration(nvaSummary.totalMinutes))}
                 </span>
               </p>
             </div>
@@ -715,9 +988,9 @@ export const StatisticsTab: React.FC = () => {
             <div className="inline-flex items-center p-0.5 bg-zinc-100 border border-zinc-200 rounded-md">
               {(
                 [
-                  { id: 'week', label: 'Week' },
-                  { id: 'month', label: 'Month' },
-                  { id: 'custom', label: 'Custom' },
+                  { id: 'week', label: t.common.week },
+                  { id: 'month', label: t.common.month },
+                  { id: 'custom', label: t.common.custom },
                 ] as { id: PeriodFilterMode; label: string }[]
               ).map((opt) => (
                 <button
@@ -739,7 +1012,7 @@ export const StatisticsTab: React.FC = () => {
           {nvaFilterMode === 'month' && (
             <div className="mt-3 flex items-center gap-2">
               <label htmlFor="nva-month" className="text-xs text-zinc-600">
-                Month:
+                {t.stats.monthLabel}
               </label>
               <input
                 id="nva-month"
@@ -755,15 +1028,15 @@ export const StatisticsTab: React.FC = () => {
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <input
                 type="date"
-                aria-label="NVA start date"
+                aria-label={t.stats.nvaStartAria}
                 value={nvaCustomFrom}
                 onChange={(e) => setNvaCustomFrom(e.target.value)}
                 className="px-2.5 py-1 text-xs font-mono text-zinc-900 bg-white border border-zinc-300 rounded"
               />
-              <span className="text-xs text-zinc-400">to</span>
+              <span className="text-xs text-zinc-400">{t.common.to}</span>
               <input
                 type="date"
-                aria-label="NVA end date"
+                aria-label={t.stats.nvaEndAria}
                 value={nvaCustomTo}
                 onChange={(e) => setNvaCustomTo(e.target.value)}
                 className="px-2.5 py-1 text-xs font-mono text-zinc-900 bg-white border border-zinc-300 rounded"
@@ -775,7 +1048,7 @@ export const StatisticsTab: React.FC = () => {
             <div className="h-7 w-full rounded-md overflow-hidden border border-zinc-200 bg-zinc-100 flex">
               {nvaSummary.totalMinutes === 0 ? (
                 <div className="w-full flex items-center justify-center text-[11px] text-zinc-400">
-                  No scheduled working blocks in selected period
+                  {t.stats.noBlocksInPeriod}
                 </div>
               ) : (
                 <>
@@ -810,19 +1083,19 @@ export const StatisticsTab: React.FC = () => {
               {[
                 {
                   key: 'VA' as ValueCategory,
-                  label: 'Value-Added',
+                  label: t.stats.vaLabel,
                   dotClass: 'bg-emerald-600',
                   stat: nvaSummary.VA,
                 },
                 {
                   key: 'NNVA' as ValueCategory,
-                  label: 'Necessary NVA',
+                  label: t.stats.nnvaLabel,
                   dotClass: 'bg-amber-400',
                   stat: nvaSummary.NNVA,
                 },
                 {
                   key: 'NVA' as ValueCategory,
-                  label: 'Non-Value-Added',
+                  label: t.stats.nvaLabel,
                   dotClass: 'bg-rose-500',
                   stat: nvaSummary.NVA,
                 },
@@ -853,14 +1126,16 @@ export const StatisticsTab: React.FC = () => {
               className="text-xs font-medium text-zinc-700 hover:text-zinc-900 underline underline-offset-4"
             >
               {showClassificationEditor
-                ? 'Hide task & step classification editor'
-                : 'Classify objectives & steps (VA / NNVA / NVA)'}
+                ? t.stats.hideClassifier
+                : t.stats.showClassifier}
             </button>
 
             {showClassificationEditor && (
               <div className="mt-3 max-h-52 overflow-y-auto border border-zinc-200 rounded-md divide-y divide-zinc-200/80">
                 {tasks.length === 0 ? (
-                  <div className="p-4 text-xs text-zinc-500 text-center">No tasks to classify.</div>
+                  <div className="p-4 text-xs text-zinc-500 text-center">
+                    {t.stats.noTasksToClassify}
+                  </div>
                 ) : (
                   tasks.map((task) => {
                     const swatch = getTaskSwatch(task.colorId);
@@ -881,7 +1156,7 @@ export const StatisticsTab: React.FC = () => {
                           </div>
                           <select
                             value={task.valueCategory}
-                            aria-label={`Lean classification for ${task.name}`}
+                            aria-label={t.stats.leanAria(task.name)}
                             onChange={(e) =>
                               updateTask(task.id, {
                                 valueCategory: e.target.value as ValueCategory,
@@ -903,7 +1178,7 @@ export const StatisticsTab: React.FC = () => {
                             <span className="truncate">{s.title}</span>
                             <select
                               value={s.valueCategory}
-                              aria-label={`Lean classification for ${s.title}`}
+                              aria-label={t.stats.leanAria(s.title)}
                               onChange={(e) =>
                                 updateStep(s.id, {
                                   valueCategory: e.target.value as ValueCategory,
@@ -925,20 +1200,22 @@ export const StatisticsTab: React.FC = () => {
             )}
           </div>
         </section>
-      </div>
 
-      {/* GRAPH C: Cumulative Flow Diagram (CFD) */}
-      <section className="bg-white border border-zinc-200 rounded-lg p-5">
+      {/* GRAPH C: Cumulative Flow Diagram (CFD) — Full Width */}
+      <section className="w-full bg-white border border-zinc-200 rounded-lg p-5">
         <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-zinc-100">
           <div>
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-zinc-700" />
               <h2 className="text-sm font-semibold text-zinc-900">
-                C. Cumulative Flow Diagram (CFD)
+                {t.stats.cfdTitle}
               </h2>
             </div>
             <p className="text-xs text-zinc-500 mt-0.5 tabular-nums">
-              {formatShortDate(cfdDateBounds.from)} – {formatShortDate(cfdDateBounds.to)} · Tracks Not Started, In Progress (WIP), and Completed steps with immutable past daily snapshots.
+              {t.stats.cfdSubtitle(
+                formatShortDate(cfdDateBounds.from, language),
+                formatShortDate(cfdDateBounds.to, language)
+              )}
             </p>
           </div>
 
@@ -947,24 +1224,24 @@ export const StatisticsTab: React.FC = () => {
             <div className="flex items-center gap-3 text-[11px] text-zinc-600">
               <span className="inline-flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />
-                Completed
+                {t.stats.completedBand}
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-sm bg-sky-500" />
-                In Progress (WIP)
+                {t.stats.wipBand}
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-sm bg-zinc-300" />
-                Not Started
+                {t.stats.notStartedBand}
               </span>
             </div>
 
             <div className="inline-flex items-center p-0.5 bg-zinc-100 border border-zinc-200 rounded-md">
               {(
                 [
-                  { id: 'week', label: 'Week' },
-                  { id: 'month', label: 'Month' },
-                  { id: 'custom', label: 'Custom' },
+                  { id: 'week', label: t.common.week },
+                  { id: 'month', label: t.common.month },
+                  { id: 'custom', label: t.common.custom },
                 ] as { id: PeriodFilterMode; label: string }[]
               ).map((opt) => (
                 <button
@@ -990,7 +1267,7 @@ export const StatisticsTab: React.FC = () => {
         {cfdFilterMode === 'month' && (
           <div className="mt-3 flex items-center gap-2">
             <label htmlFor="cfd-month" className="text-xs text-zinc-600">
-              Month:
+              {t.stats.monthLabel}
             </label>
             <input
               id="cfd-month"
@@ -1009,7 +1286,7 @@ export const StatisticsTab: React.FC = () => {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <input
               type="date"
-              aria-label="CFD start date"
+              aria-label={t.stats.cfdStartAria}
               value={cfdCustomFrom}
               onChange={(e) => {
                 setCfdCustomFrom(e.target.value);
@@ -1017,10 +1294,10 @@ export const StatisticsTab: React.FC = () => {
               }}
               className="px-2.5 py-1 text-xs font-mono text-zinc-900 bg-white border border-zinc-300 rounded"
             />
-            <span className="text-xs text-zinc-400">to</span>
+            <span className="text-xs text-zinc-400">{t.common.to}</span>
             <input
               type="date"
-              aria-label="CFD end date"
+              aria-label={t.stats.cfdEndAria}
               value={cfdCustomTo}
               onChange={(e) => {
                 setCfdCustomTo(e.target.value);
@@ -1033,7 +1310,7 @@ export const StatisticsTab: React.FC = () => {
 
         {filteredCfdSeries.length === 0 ? (
           <div className="mt-5 p-8 border border-dashed border-zinc-300 rounded-md text-center text-xs text-zinc-500">
-            No CFD daily snapshots fall inside the selected date range. Daily snapshots lock automatically each day you plan and execute steps.
+            {t.stats.noCfdSnapshots}
           </div>
         ) : (
           <div className="mt-5 space-y-4">
@@ -1042,32 +1319,32 @@ export const StatisticsTab: React.FC = () => {
               <div className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2 bg-zinc-50 border border-zinc-200 rounded-md text-xs tabular-nums">
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-semibold text-zinc-900">
-                    {formatShortDate(activeCfdPoint.date)}
+                    {formatShortDate(activeCfdPoint.date, language)}
                   </span>
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono border rounded bg-white border-zinc-200 text-zinc-600">
                     {activeCfdPoint.locked ? (
                       <>
                         <Lock className="w-2.5 h-2.5" />
-                        Frozen Snapshot
+                        {t.stats.frozenSnapshot}
                       </>
                     ) : (
-                      'Live Today'
+                      t.stats.liveToday
                     )}
                   </span>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4 font-mono">
                   <span className="text-emerald-700 font-semibold">
-                    Completed: {activeCfdPoint.completed}
+                    {t.stats.completedStat(activeCfdPoint.completed)}
                   </span>
                   <span className="text-sky-700 font-semibold">
-                    In Progress: {activeCfdPoint.inProgress}
+                    {t.stats.inProgressStat(activeCfdPoint.inProgress)}
                   </span>
                   <span className="text-zinc-600 font-semibold">
-                    Not Started: {activeCfdPoint.notStarted}
+                    {t.stats.notStartedStat(activeCfdPoint.notStarted)}
                   </span>
                   <span className="text-zinc-900 font-bold">
-                    Total Steps: {activeCfdPoint.total}
+                    {t.stats.totalStepsStat(activeCfdPoint.total)}
                   </span>
                 </div>
               </div>
@@ -1079,7 +1356,7 @@ export const StatisticsTab: React.FC = () => {
                 viewBox={`0 0 ${cfdGeometry.width} ${cfdGeometry.height}`}
                 className="w-full h-56 select-none"
                 role="img"
-                aria-label="Cumulative Flow Diagram showing Completed, In Progress, and Not Started steps over time"
+                aria-label={t.stats.cfdImgAria}
               >
                 {/* Horizontal Y-Axis Gridlines */}
                 {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
@@ -1209,7 +1486,7 @@ export const StatisticsTab: React.FC = () => {
                           fill={isFocused ? '#18181b' : '#71717a'}
                           fontWeight={isFocused ? '600' : '400'}
                         >
-                          {formatCompactDate(pt.date)}
+                          {formatCompactDate(pt.date, language)}
                         </text>
                       )}
 

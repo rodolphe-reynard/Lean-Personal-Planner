@@ -13,9 +13,12 @@ import {
 } from '../types';
 import {
   addDays,
+  DateLocale,
+  doesTaskHaveDeadlineInWeek,
   formatMinutesToTime,
   formatShortDate,
   getStartOfWeek,
+  getTaskDeadlines,
   isValidDateString,
   parseLocalDate,
 } from './dateUtils';
@@ -180,6 +183,7 @@ export function validateStepPlacement(params: {
   allSteps: WBSStep[];
   scheduledBlocks: ScheduledBlock[];
   fixedActivities: FixedActivity[];
+  lang?: DateLocale;
 }): { ok: true } | { ok: false; reason: string } {
   const {
     step,
@@ -190,6 +194,7 @@ export function validateStepPlacement(params: {
     allSteps,
     scheduledBlocks,
     fixedActivities,
+    lang = 'en',
   } = params;
 
   const endMinutes = startMinutes + durationMinutes;
@@ -198,11 +203,15 @@ export function validateStepPlacement(params: {
   const dayFixed = getFixedActivitiesForDate(fixedActivities, date);
   for (const fa of dayFixed) {
     if (intervalsOverlap(startMinutes, endMinutes, fa.startMinutes, fa.endMinutes)) {
+      const timeRange = `${formatMinutesToTime(fa.startMinutes)}–${formatMinutesToTime(
+        fa.endMinutes
+      )}`;
       return {
         ok: false,
-        reason: `Cannot overwrite fixed activity "${fa.title}" (${formatMinutesToTime(
-          fa.startMinutes
-        )}–${formatMinutesToTime(fa.endMinutes)}). Drag onto it to link instead.`,
+        reason:
+          lang === 'fr'
+            ? `Impossible d'écraser l'activité fixe « ${fa.title} » (${timeRange}). Déposez l'étape dessus pour l'associer.`
+            : `Cannot overwrite fixed activity "${fa.title}" (${timeRange}). Drag onto it to link instead.`,
       };
     }
   }
@@ -219,7 +228,10 @@ export function validateStepPlacement(params: {
     if (predBlocks.length === 0) {
       return {
         ok: false,
-        reason: `Predecessor "${pred.title}" must be completed or scheduled first.`,
+        reason:
+          lang === 'fr'
+            ? `Le prédécesseur « ${pred.title} » doit d'abord être terminé ou planifié.`
+            : `Predecessor "${pred.title}" must be completed or scheduled first.`,
       };
     }
 
@@ -231,11 +243,15 @@ export function validateStepPlacement(params: {
       const earliest = [...predBlocks].sort(
         (a, b) => compareDateTime(a.date, a.startMinutes, b.date, b.startMinutes)
       )[0];
+      const finishStr = `${formatShortDate(earliest.date, lang)} ${formatMinutesToTime(
+        earliest.startMinutes + earliest.durationMinutes
+      )}`;
       return {
         ok: false,
-        reason: `Cannot schedule "${step.title}" before predecessor "${pred.title}" finishes (${formatShortDate(
-          earliest.date
-        )} ${formatMinutesToTime(earliest.startMinutes + earliest.durationMinutes)}).`,
+        reason:
+          lang === 'fr'
+            ? `Impossible de planifier « ${step.title} » avant la fin du prédécesseur « ${pred.title} » (${finishStr}).`
+            : `Cannot schedule "${step.title}" before predecessor "${pred.title}" finishes (${finishStr}).`,
       };
     }
   }
@@ -247,11 +263,15 @@ export function validateStepPlacement(params: {
       const succBlocks = otherBlocks.filter((b) => b.stepId === succ.id);
       for (const sb of succBlocks) {
         if (compareDateTime(date, endMinutes, sb.date, sb.startMinutes) > 0) {
+          const succStr = `${formatShortDate(sb.date, lang)} ${formatMinutesToTime(
+            sb.startMinutes
+          )}`;
           return {
             ok: false,
-            reason: `Cannot move "${step.title}" past dependent step "${succ.title}" (${formatShortDate(
-              sb.date
-            )} ${formatMinutesToTime(sb.startMinutes)}).`,
+            reason:
+              lang === 'fr'
+                ? `Impossible de déplacer « ${step.title} » après l'étape dépendante « ${succ.title} » (${succStr}).`
+                : `Cannot move "${step.title}" past dependent step "${succ.title}" (${succStr}).`,
           };
         }
       }
@@ -336,6 +356,7 @@ export function validateAndBuildAIProposal(params: {
   fixedActivities: FixedActivity[];
   currentWeekBlocks: ScheduledBlock[];
   allBlocksOutsideWeek: ScheduledBlock[];
+  lang?: DateLocale;
 }): AIScheduleProposal {
   const {
     weekStart,
@@ -348,6 +369,7 @@ export function validateAndBuildAIProposal(params: {
     fixedActivities,
     currentWeekBlocks,
     allBlocksOutsideWeek,
+    lang = 'en',
   } = params;
 
   const weekDaySet = new Set(weekDays);
@@ -385,7 +407,10 @@ export function validateAndBuildAIProposal(params: {
         if (!wasAlreadyScheduled) {
           conflicts.push({
             severity: 'warning',
-            message: `Skipped "${step.title}" because responsibility is assigned to Others.`,
+            message:
+              lang === 'fr'
+                ? `Étape « ${step.title} » ignorée car assignée à « Autres ».`
+                : `Skipped "${step.title}" because responsibility is assigned to Others.`,
           });
           return false;
         }
@@ -422,6 +447,7 @@ export function validateAndBuildAIProposal(params: {
       allSteps: steps,
       scheduledBlocks: combinedBlocks,
       fixedActivities,
+      lang,
     });
 
     let chosenDate = cand.date;
@@ -443,6 +469,7 @@ export function validateAndBuildAIProposal(params: {
             allSteps: steps,
             scheduledBlocks: combinedBlocks,
             fixedActivities,
+            lang,
           });
           if (tryCheck.ok) {
             chosenDate = tryDate;
@@ -457,9 +484,14 @@ export function validateAndBuildAIProposal(params: {
         conflicts.push({
           severity: 'warning',
           date: cand.date,
-          message: `Could not schedule "${step.title}": ${
-            !depCheck.ok ? depCheck.reason : 'No conflict-free time slot available.'
-          }`,
+          message:
+            lang === 'fr'
+              ? `Impossible de planifier « ${step.title} » : ${
+                  !depCheck.ok ? depCheck.reason : 'Aucun créneau sans conflit disponible.'
+                }`
+              : `Could not schedule "${step.title}": ${
+                  !depCheck.ok ? depCheck.reason : 'No conflict-free time slot available.'
+                }`,
         });
         continue;
       }
@@ -538,5 +570,104 @@ export function validateAndBuildAIProposal(params: {
     conflicts,
     proposedWeekBlocks: accepted,
     diffs,
+  };
+}
+
+export interface WeeklyReliabilityMetrics {
+  ppcoPercent: number | null;
+  ppcoCompleted: number;
+  ppcoTotal: number;
+  clPercent: number | null;
+  clCommitted: number;
+  clShouldTotal: number;
+}
+
+/**
+ * Computes weekly PPCO (Critical / WILL objectives completion rate) and CL (Commitment Level):
+ * - Critical (WILL) objectives for a week are objectives that have at least one milestone inside
+ *   weekStart..weekEnd OR have an earlier (< weekStart) milestone and remained active entering the week.
+ * - PPCO = % of those critical (WILL) objectives that are completed.
+ * - CL = % of the open personal ('Me') steps belonging to critical (WILL) objectives that were
+ *   actually committed (scheduled on the calendar or linked to a fixed activity) in that week.
+ */
+export function computeWeeklyReliabilityMetrics(params: {
+  weekStart: string;
+  tasks: Task[];
+  steps: WBSStep[];
+  scheduledBlocks: ScheduledBlock[];
+  fixedActivities: FixedActivity[];
+}): WeeklyReliabilityMetrics {
+  const { weekStart, tasks, steps, scheduledBlocks, fixedActivities } = params;
+  const weekEnd = addDays(weekStart, 6);
+  const weekStartMs = parseLocalDate(weekStart).getTime() - 12 * 3600 * 1000;
+
+  const scheduledStepIdsInWeek = new Set<string>();
+  for (const b of scheduledBlocks) {
+    if (b.date >= weekStart && b.date <= weekEnd) {
+      scheduledStepIdsInWeek.add(b.stepId);
+    }
+  }
+  for (const fa of fixedActivities) {
+    if (fa.date >= weekStart && fa.date <= weekEnd) {
+      for (const sid of fa.linkedStepIds) {
+        scheduledStepIdsInWeek.add(sid);
+      }
+    }
+  }
+
+  const stepsByTask = new Map<string, WBSStep[]>();
+  for (const s of steps) {
+    const arr = stepsByTask.get(s.taskId) ?? [];
+    arr.push(s);
+    stepsByTask.set(s.taskId, arr);
+  }
+
+  const criticalTasks: Task[] = [];
+  for (const task of tasks) {
+    const deadlines = getTaskDeadlines(task);
+    const hasMilestoneInWeek = doesTaskHaveDeadlineInWeek(task, weekStart);
+    const hasEarlierDeadline = deadlines.some((d) => d.date < weekStart);
+    const taskSteps = stepsByTask.get(task.id) ?? [];
+    const hadActivityInOrAfterWeek =
+      task.status !== 'completed' ||
+      task.updatedAt >= weekStartMs ||
+      taskSteps.some(
+        (s) =>
+          scheduledStepIdsInWeek.has(s.id) ||
+          (s.completedAt !== undefined && s.completedAt >= weekStartMs)
+      );
+
+    if (hasMilestoneInWeek || (hasEarlierDeadline && hadActivityInOrAfterWeek)) {
+      criticalTasks.push(task);
+    }
+  }
+
+  const ppcoTotal = criticalTasks.length;
+  const ppcoCompleted = criticalTasks.filter((t) => t.status === 'completed').length;
+  const ppcoPercent = ppcoTotal > 0 ? Math.round((ppcoCompleted / ppcoTotal) * 100) : null;
+
+  // Steps that SHOULD have been committed this week:
+  // Personal ('Me') steps of critical (WILL) objectives that were still open entering the week
+  // (or were scheduled/completed during the week).
+  const criticalTaskIds = new Set(criticalTasks.map((t) => t.id));
+  const shouldCommitSteps = steps.filter((s) => {
+    if (!criticalTaskIds.has(s.taskId)) return false;
+    if (s.responsibility !== 'Me') return false;
+    if (!s.completed) return true;
+    if (scheduledStepIdsInWeek.has(s.id)) return true;
+    return s.completedAt !== undefined && s.completedAt >= weekStartMs;
+  });
+
+  const clShouldTotal = shouldCommitSteps.length;
+  const clCommitted = shouldCommitSteps.filter((s) => scheduledStepIdsInWeek.has(s.id)).length;
+  const clPercent = clShouldTotal > 0 ? Math.round((clCommitted / clShouldTotal) * 100) : null;
+
+  return {
+    ppcoPercent,
+    ppcoCompleted,
+    ppcoTotal,
+    clPercent,
+    clCommitted,
+    clShouldTotal,
   };
 }

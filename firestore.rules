@@ -200,10 +200,21 @@ service cloud.firestore {
         && (!('snapshot' in data) || (
           data.snapshot is map
           && data.snapshot.keys().hasAll(['plannedCount', 'completedCount', 'ppcPercent', 'completedItems', 'incompleteItems', 'locked', 'updatedAt'])
-          && data.snapshot.keys().hasOnly(['plannedCount', 'completedCount', 'ppcPercent', 'completedItems', 'incompleteItems', 'locked', 'updatedAt'])
+          && data.snapshot.keys().hasOnly([
+            'plannedCount', 'completedCount', 'ppcPercent',
+            'ppcoPercent', 'ppcoCompleted', 'ppcoTotal',
+            'clPercent', 'clCommitted', 'clShouldTotal',
+            'completedItems', 'incompleteItems', 'locked', 'updatedAt'
+          ])
           && data.snapshot.plannedCount is number
           && data.snapshot.completedCount is number
           && data.snapshot.ppcPercent is number
+          && (!('ppcoPercent' in data.snapshot) || data.snapshot.ppcoPercent == null || (data.snapshot.ppcoPercent is number && data.snapshot.ppcoPercent >= 0 && data.snapshot.ppcoPercent <= 100))
+          && (!('ppcoCompleted' in data.snapshot) || (data.snapshot.ppcoCompleted is number && data.snapshot.ppcoCompleted >= 0))
+          && (!('ppcoTotal' in data.snapshot) || (data.snapshot.ppcoTotal is number && data.snapshot.ppcoTotal >= 0))
+          && (!('clPercent' in data.snapshot) || data.snapshot.clPercent == null || (data.snapshot.clPercent is number && data.snapshot.clPercent >= 0 && data.snapshot.clPercent <= 100))
+          && (!('clCommitted' in data.snapshot) || (data.snapshot.clCommitted is number && data.snapshot.clCommitted >= 0))
+          && (!('clShouldTotal' in data.snapshot) || (data.snapshot.clShouldTotal is number && data.snapshot.clShouldTotal >= 0))
           && data.snapshot.completedItems is list && data.snapshot.completedItems.size() <= 150
           && data.snapshot.incompleteItems is list && data.snapshot.incompleteItems.size() <= 150
           && data.snapshot.locked is bool
