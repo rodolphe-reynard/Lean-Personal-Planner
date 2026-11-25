@@ -1,0 +1,6 @@
+{
+  "name": "Lean Personal Planner",
+  "description": "Minimalist Lean personal planning system uniting Kanban, Master Schedule, Heijunka, Work Breakdown Structure, and pull-based Weekly Work Plan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,460 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1 / Global Safety Net: Default-deny all unmatched paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==================== GLOBAL HARDENED HELPERS ====================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isEmailVerified() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidDateStr(d) {
+      return d is string && d.size() == 10 && d.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function hasServerSyncedTime(data) {
+      return data.syncedAt is timestamp && data.syncedAt == request.time;
+    }
+
+    // Master Gate: verify parent user anchor exists and belongs to authenticated user
+    function parentUserValid(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId))
+        && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+    }
+
+    function taskExistsForUser(userId, taskId) {
+      return isValidId(taskId)
+        && exists(/databases/$(database)/documents/users/$(userId)/tasks/$(taskId));
+    }
+
+    // ==================== VALIDATION BLUEPRINTS ====================
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'createdAt', 'updatedAt', 'syncedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'createdAt', 'updatedAt', 'syncedAt'])
+        && isValidId(data.uid)
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && data.displayName is string
+        && data.displayName.size() <= 120
+        && data.createdAt is number
+        && data.updatedAt is number
+        && data.updatedAt >= data.createdAt
+        && hasServerSyncedTime(data);
+    }
+
+    function isValidTask(data, userId, taskId) {
+      return data.keys().hasAll([
+          'id', 'userId', 'name', 'description', 'deadline', 'deadlines',
+          'status', 'colorId', 'responsibility', 'valueCategory',
+          'createdAt', 'updatedAt', 'syncedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'name', 'description', 'deadline', 'deadlines',
+          'status', 'colorId', 'responsibility', 'valueCategory',
+          'createdAt', 'updatedAt', 'syncedAt'
+        ])
+        && data.id == taskId
+        && isValidId(data.id)
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 200
+        && data.description is string && data.description.size() <= 2000
+        && isValidDateStr(data.deadline)
+        && data.deadlines is list && data.deadlines.size() >= 1 && data.deadlines.size() <= 25
+        && data.deadlines[0] is map
+        && data.status in ['todo', 'in_progress', 'completed']
+        && data.colorId is string && data.colorId.size() >= 1 && data.colorId.size() <= 32
+        && data.responsibility in ['Me', 'Others']
+        && data.valueCategory in ['VA', 'NNVA', 'NVA']
+        && data.createdAt is number
+        && data.updatedAt is number
+        && hasServerSyncedTime(data);
+    }
+
+    function isValidStep(data, userId, stepId) {
+      return data.keys().hasAll([
+          'id', 'userId', 'taskId', 'title', 'notes', 'order', 'estimatedMinutes',
+          'completed', 'executionState', 'flowStatus', 'varianceReason',
+          'responsibility', 'dependsOnStepIds', 'valueCategory',
+          'createdAt', 'updatedAt', 'syncedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'taskId', 'title', 'notes', 'order', 'estimatedMinutes',
+          'completed', 'executionState', 'flowStatus', 'varianceReason', 'completedAt',
+          'responsibility', 'dependsOnStepIds', 'valueCategory',
+          'createdAt', 'updatedAt', 'syncedAt'
+        ])
+        && data.id == stepId
+        && isValidId(data.id)
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && isValidId(data.taskId)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 240
+        && data.notes is string && data.notes.size() <= 1000
+        && data.order is number && data.order >= 0 && data.order <= 10000
+        && data.estimatedMinutes is number && data.estimatedMinutes >= 30 && data.estimatedMinutes <= 1440
+        && data.completed is bool
+        && data.executionState in ['not_done', 'done_expected', 'done_variance']
+        && data.flowStatus in ['not_started', 'in_progress', 'completed']
+        && data.varianceReason is string && data.varianceReason.size() <= 1000
+        && (!('completedAt' in data) || data.completedAt is number)
+        && data.responsibility in ['Me', 'Others']
+        && data.dependsOnStepIds is list && data.dependsOnStepIds.size() <= 50
+        && (data.dependsOnStepIds.size() == 0 || data.dependsOnStepIds[0] is string)
+        && data.valueCategory in ['VA', 'NNVA', 'NVA']
+        && data.createdAt is number
+        && data.updatedAt is number
+        && hasServerSyncedTime(data);
+    }
+
+    function isValidBlock(data, userId, blockId) {
+      return data.keys().hasAll([
+          'id', 'userId', 'stepId', 'taskId', 'date', 'startMinutes',
+          'durationMinutes', 'updatedAt', 'syncedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'stepId', 'taskId', 'date', 'startMinutes',
+          'durationMinutes', 'updatedAt', 'syncedAt'
+        ])
+        && data.id == blockId
+        && isValidId(data.id)
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && isValidId(data.stepId)
+        && isValidId(data.taskId)
+        && isValidDateStr(data.date)
+        && data.startMinutes is number && data.startMinutes >= 0 && data.startMinutes <= 1410
+        && data.durationMinutes is number && data.durationMinutes >= 30 && data.durationMinutes <= 960
+        && data.updatedAt is number
+        && hasServerSyncedTime(data);
+    }
+
+    function isValidFixedActivity(data, userId, fixedId) {
+      return data.keys().hasAll([
+          'id', 'userId', 'title', 'kind', 'date', 'startMinutes', 'endMinutes',
+          'countsAsWorkingTime', 'valueCategory', 'linkedStepIds',
+          'createdAt', 'updatedAt', 'syncedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'title', 'kind', 'date', 'startMinutes', 'endMinutes',
+          'countsAsWorkingTime', 'valueCategory', 'linkedStepIds', 'seriesId',
+          'createdAt', 'updatedAt', 'syncedAt'
+        ])
+        && data.id == fixedId
+        && isValidId(data.id)
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.kind in ['class', 'meeting', 'lunch', 'non_working']
+        && isValidDateStr(data.date)
+        && data.startMinutes is number && data.startMinutes >= 0 && data.startMinutes <= 1410
+        && data.endMinutes is number && data.endMinutes > data.startMinutes && data.endMinutes <= 1440
+        && data.countsAsWorkingTime is bool
+        && data.valueCategory in ['VA', 'NNVA', 'NVA']
+        && data.linkedStepIds is list && data.linkedStepIds.size() <= 50
+        && (data.linkedStepIds.size() == 0 || data.linkedStepIds[0] is string)
+        && (!('seriesId' in data) || (data.seriesId is string && data.seriesId.size() <= 128))
+        && data.createdAt is number
+        && data.updatedAt is number
+        && hasServerSyncedTime(data);
+    }
+
+    function isValidPPCRecord(data, userId, weekStart) {
+      return data.keys().hasAll([
+          'weekStart', 'userId', 'reasonsForVariance', 'stepVariances', 'updatedAt', 'syncedAt'
+        ])
+        && data.keys().hasOnly([
+          'weekStart', 'userId', 'reasonsForVariance', 'stepVariances', 'snapshot', 'updatedAt', 'syncedAt'
+        ])
+        && data.weekStart == weekStart
+        && isValidDateStr(data.weekStart)
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.reasonsForVariance is string && data.reasonsForVariance.size() <= 4000
+        && data.stepVariances is list && data.stepVariances.size() <= 100
+        && (data.stepVariances.size() == 0 || data.stepVariances[0] is map)
+        && (!('snapshot' in data) || (
+          data.snapshot is map
+          && data.snapshot.keys().hasAll(['plannedCount', 'completedCount', 'ppcPercent', 'completedItems', 'incompleteItems', 'locked', 'updatedAt'])
+          && data.snapshot.keys().hasOnly(['plannedCount', 'completedCount', 'ppcPercent', 'completedItems', 'incompleteItems', 'locked', 'updatedAt'])
+          && data.snapshot.plannedCount is number
+          && data.snapshot.completedCount is number
+          && data.snapshot.ppcPercent is number
+          && data.snapshot.completedItems is list && data.snapshot.completedItems.size() <= 150
+          && data.snapshot.incompleteItems is list && data.snapshot.incompleteItems.size() <= 150
+          && data.snapshot.locked is bool
+          && data.snapshot.updatedAt is number
+        ))
+        && data.updatedAt is number
+        && hasServerSyncedTime(data);
+    }
+
+    function isValidCFDSnapshot(data, userId, dateId) {
+      return data.keys().hasAll([
+          'date', 'userId', 'notStarted', 'inProgress', 'completed', 'total', 'locked', 'updatedAt', 'syncedAt'
+        ])
+        && data.keys().hasOnly([
+          'date', 'userId', 'notStarted', 'inProgress', 'completed', 'total', 'locked', 'updatedAt', 'syncedAt'
+        ])
+        && data.date == dateId
+        && isValidDateStr(data.date)
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.notStarted is number && data.notStarted >= 0 && data.notStarted <= 10000
+        && data.inProgress is number && data.inProgress >= 0 && data.inProgress <= 10000
+        && data.completed is number && data.completed >= 0 && data.completed <= 10000
+        && data.total is number && data.total >= 0 && data.total <= 10000
+        && data.locked is bool
+        && data.updatedAt is number
+        && hasServerSyncedTime(data);
+    }
+
+    function isValidScheduleVersion(data, userId, versionId) {
+      return data.keys().hasAll(['id', 'userId', 'createdAt', 'label', 'weekStart', 'blocks', 'syncedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'createdAt', 'label', 'weekStart', 'blocks', 'syncedAt'])
+        && data.id == versionId
+        && isValidId(data.id)
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.createdAt is number
+        && data.label is string && data.label.size() >= 1 && data.label.size() <= 240
+        && isValidDateStr(data.weekStart)
+        && data.blocks is list && data.blocks.size() <= 250
+        && (data.blocks.size() == 0 || data.blocks[0] is map)
+        && hasServerSyncedTime(data);
+    }
+
+    function isValidSettings(data, userId, settingId) {
+      return data.keys().hasAll([
+          'id', 'userId', 'workdays', 'workdayStartMinutes', 'workdayEndMinutes', 'dailyTargetHours', 'updatedAt', 'syncedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'workdays', 'workdayStartMinutes', 'workdayEndMinutes', 'dailyTargetHours', 'updatedAt', 'syncedAt'
+        ])
+        && data.id == settingId
+        && isValidId(data.id)
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.workdays is list && data.workdays.size() <= 7
+        && (data.workdays.size() == 0 || data.workdays[0] is number)
+        && data.workdayStartMinutes is number && data.workdayStartMinutes >= 0 && data.workdayStartMinutes <= 1410
+        && data.workdayEndMinutes is number && data.workdayEndMinutes > data.workdayStartMinutes && data.workdayEndMinutes <= 1440
+        && data.dailyTargetHours is number && data.dailyTargetHours >= 1 && data.dailyTargetHours <= 16
+        && data.updatedAt is number
+        && hasServerSyncedTime(data);
+    }
+
+    // ==================== COLLECTION MATCH BLOCKS ====================
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId);
+      allow update: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt', 'syncedAt']);
+      allow delete: if false;
+
+      match /tasks/{taskId} {
+        allow get: if isOwner(userId) && isValidId(taskId) && parentUserValid(userId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(taskId)
+          && isValidTask(incoming(), userId, taskId)
+          && parentUserValid(userId);
+        allow update: if isOwner(userId)
+          && isValidId(taskId)
+          && isValidTask(incoming(), userId, taskId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'description', 'deadline', 'deadlines', 'status',
+              'colorId', 'responsibility', 'valueCategory', 'updatedAt', 'syncedAt'
+            ])
+          )
+          && parentUserValid(userId);
+        allow delete: if isOwner(userId) && isValidId(taskId) && parentUserValid(userId);
+      }
+
+      match /steps/{stepId} {
+        allow get: if isOwner(userId) && isValidId(stepId) && parentUserValid(userId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(stepId)
+          && isValidStep(incoming(), userId, stepId)
+          && parentUserValid(userId)
+          && taskExistsForUser(userId, incoming().taskId);
+        allow update: if isOwner(userId)
+          && isValidId(stepId)
+          && isValidStep(incoming(), userId, stepId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().taskId == existing().taskId
+          && incoming().createdAt == existing().createdAt
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'notes', 'order', 'estimatedMinutes', 'completed',
+              'executionState', 'flowStatus', 'varianceReason', 'completedAt',
+              'responsibility', 'dependsOnStepIds', 'valueCategory', 'updatedAt', 'syncedAt'
+            ])
+          )
+          && parentUserValid(userId);
+        allow delete: if isOwner(userId) && isValidId(stepId) && parentUserValid(userId);
+      }
+
+      match /scheduledBlocks/{blockId} {
+        allow get: if isOwner(userId) && isValidId(blockId) && parentUserValid(userId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(blockId)
+          && isValidBlock(incoming(), userId, blockId)
+          && parentUserValid(userId)
+          && taskExistsForUser(userId, incoming().taskId);
+        allow update: if isOwner(userId)
+          && isValidId(blockId)
+          && isValidBlock(incoming(), userId, blockId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().stepId == existing().stepId
+          && incoming().taskId == existing().taskId
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'date', 'startMinutes', 'durationMinutes', 'updatedAt', 'syncedAt'
+          ])
+          && parentUserValid(userId);
+        allow delete: if isOwner(userId) && isValidId(blockId) && parentUserValid(userId);
+      }
+
+      match /fixedActivities/{fixedActivityId} {
+        allow get: if isOwner(userId) && isValidId(fixedActivityId) && parentUserValid(userId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(fixedActivityId)
+          && isValidFixedActivity(incoming(), userId, fixedActivityId)
+          && parentUserValid(userId);
+        allow update: if isOwner(userId)
+          && isValidId(fixedActivityId)
+          && isValidFixedActivity(incoming(), userId, fixedActivityId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'kind', 'date', 'startMinutes', 'endMinutes',
+            'countsAsWorkingTime', 'valueCategory', 'linkedStepIds', 'seriesId', 'updatedAt', 'syncedAt'
+          ])
+          && parentUserValid(userId);
+        allow delete: if isOwner(userId) && isValidId(fixedActivityId) && parentUserValid(userId);
+      }
+
+      match /ppcRecords/{weekStart} {
+        allow get: if isOwner(userId) && isValidId(weekStart) && parentUserValid(userId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(weekStart)
+          && isValidPPCRecord(incoming(), userId, weekStart)
+          && parentUserValid(userId);
+        allow update: if isOwner(userId)
+          && isValidId(weekStart)
+          && isValidPPCRecord(incoming(), userId, weekStart)
+          && incoming().weekStart == existing().weekStart
+          && incoming().userId == existing().userId
+          && (
+            // Either active week updating both variance & snapshot, OR locked historical week allowing only Reasons for Variance editing without altering locked snapshot numbers
+            (
+              (!('snapshot' in existing()) || existing().snapshot.locked == false)
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'reasonsForVariance', 'stepVariances', 'snapshot', 'updatedAt', 'syncedAt'
+              ])
+            ) || (
+              'snapshot' in existing()
+              && existing().snapshot.locked == true
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'reasonsForVariance', 'stepVariances', 'updatedAt', 'syncedAt'
+              ])
+            )
+          )
+          && parentUserValid(userId);
+        allow delete: if isOwner(userId) && isValidId(weekStart) && parentUserValid(userId);
+      }
+
+      match /cfdSnapshots/{date} {
+        allow get: if isOwner(userId) && isValidId(date) && parentUserValid(userId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(date)
+          && isValidCFDSnapshot(incoming(), userId, date)
+          && parentUserValid(userId);
+        allow update: if isOwner(userId)
+          && isValidId(date)
+          && isValidCFDSnapshot(incoming(), userId, date)
+          && incoming().date == existing().date
+          && incoming().userId == existing().userId
+          && existing().locked == false
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'notStarted', 'inProgress', 'completed', 'total', 'locked', 'updatedAt', 'syncedAt'
+          ])
+          && parentUserValid(userId);
+        allow delete: if false;
+      }
+
+      match /scheduleVersions/{versionId} {
+        allow get: if isOwner(userId) && isValidId(versionId) && parentUserValid(userId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(versionId)
+          && isValidScheduleVersion(incoming(), userId, versionId)
+          && parentUserValid(userId);
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(versionId) && parentUserValid(userId);
+      }
+
+      match /settings/{settingId} {
+        allow get: if isOwner(userId) && isValidId(settingId) && parentUserValid(userId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(settingId)
+          && isValidSettings(incoming(), userId, settingId)
+          && parentUserValid(userId);
+        allow update: if isOwner(userId)
+          && isValidId(settingId)
+          && isValidSettings(incoming(), userId, settingId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'workdays', 'workdayStartMinutes', 'workdayEndMinutes', 'dailyTargetHours', 'updatedAt', 'syncedAt'
+          ])
+          && parentUserValid(userId);
+        allow delete: if isOwner(userId) && isValidId(settingId) && parentUserValid(userId);
+      }
+    }
+  }
+}

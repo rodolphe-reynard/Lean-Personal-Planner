@@ -1,0 +1,564 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Root user workspace document anchoring ownership for all planner subcollections.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "syncedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "displayName", "createdAt", "updatedAt", "syncedAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Master Schedule objective with one or more milestone deadlines.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "deadline": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "deadlines": {
+          "type": "array"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["todo", "in_progress", "completed"]
+        },
+        "colorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "responsibility": {
+          "type": "string",
+          "enum": ["Me", "Others"]
+        },
+        "valueCategory": {
+          "type": "string",
+          "enum": ["VA", "NNVA", "NVA"]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "syncedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "name",
+        "description",
+        "deadline",
+        "deadlines",
+        "status",
+        "colorId",
+        "responsibility",
+        "valueCategory",
+        "createdAt",
+        "updatedAt",
+        "syncedAt"
+      ]
+    },
+    "WBSStep": {
+      "title": "WBSStep",
+      "description": "Sequential Work Breakdown Structure step with dependency links and 3-state execution tracking.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "order": {
+          "type": "number"
+        },
+        "estimatedMinutes": {
+          "type": "number"
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "executionState": {
+          "type": "string",
+          "enum": ["not_done", "done_expected", "done_variance"]
+        },
+        "flowStatus": {
+          "type": "string",
+          "enum": ["not_started", "in_progress", "completed"]
+        },
+        "varianceReason": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "completedAt": {
+          "type": "number"
+        },
+        "responsibility": {
+          "type": "string",
+          "enum": ["Me", "Others"]
+        },
+        "dependsOnStepIds": {
+          "type": "array"
+        },
+        "valueCategory": {
+          "type": "string",
+          "enum": ["VA", "NNVA", "NVA"]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "syncedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "taskId",
+        "title",
+        "notes",
+        "order",
+        "estimatedMinutes",
+        "completed",
+        "executionState",
+        "flowStatus",
+        "varianceReason",
+        "responsibility",
+        "dependsOnStepIds",
+        "valueCategory",
+        "createdAt",
+        "updatedAt",
+        "syncedAt"
+      ]
+    },
+    "ScheduledBlock": {
+      "title": "ScheduledBlock",
+      "description": "Time-boxed execution block on the Weekly Work Plan calendar.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "stepId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "date": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "startMinutes": {
+          "type": "number"
+        },
+        "durationMinutes": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "syncedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "stepId",
+        "taskId",
+        "date",
+        "startMinutes",
+        "durationMinutes",
+        "updatedAt",
+        "syncedAt"
+      ]
+    },
+    "FixedActivity": {
+      "title": "FixedActivity",
+      "description": "Independent single-date fixed calendar commitment with isolated step links.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["class", "meeting", "lunch", "non_working"]
+        },
+        "date": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "startMinutes": {
+          "type": "number"
+        },
+        "endMinutes": {
+          "type": "number"
+        },
+        "countsAsWorkingTime": {
+          "type": "boolean"
+        },
+        "valueCategory": {
+          "type": "string",
+          "enum": ["VA", "NNVA", "NVA"]
+        },
+        "linkedStepIds": {
+          "type": "array"
+        },
+        "seriesId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "syncedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "title",
+        "kind",
+        "date",
+        "startMinutes",
+        "endMinutes",
+        "countsAsWorkingTime",
+        "valueCategory",
+        "linkedStepIds",
+        "createdAt",
+        "updatedAt",
+        "syncedAt"
+      ]
+    },
+    "WeeklyPPCRecord": {
+      "title": "WeeklyPPCRecord",
+      "description": "Weekly Percent Plan Complete record, Reasons for Variance, and frozen weekly execution snapshot.",
+      "type": "object",
+      "properties": {
+        "weekStart": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "reasonsForVariance": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "stepVariances": {
+          "type": "array"
+        },
+        "snapshot": {
+          "type": "object"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "syncedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["weekStart", "userId", "reasonsForVariance", "stepVariances", "updatedAt", "syncedAt"]
+    },
+    "DailyCFDSnapshot": {
+      "title": "DailyCFDSnapshot",
+      "description": "Immutable historical daily count of steps across Not Started, In Progress, and Completed for the CFD.",
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "notStarted": {
+          "type": "number"
+        },
+        "inProgress": {
+          "type": "number"
+        },
+        "completed": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "syncedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "date",
+        "userId",
+        "notStarted",
+        "inProgress",
+        "completed",
+        "total",
+        "locked",
+        "updatedAt",
+        "syncedAt"
+      ]
+    },
+    "ScheduleVersion": {
+      "title": "ScheduleVersion",
+      "description": "Snapshot of scheduled blocks prior to AI schedule application or restoration.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "weekStart": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "blocks": {
+          "type": "array"
+        },
+        "syncedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "userId", "createdAt", "label", "weekStart", "blocks", "syncedAt"]
+    },
+    "WorkCapacitySettings": {
+      "title": "WorkCapacitySettings",
+      "description": "User weekly working window and daily target hours.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "workdays": {
+          "type": "array"
+        },
+        "workdayStartMinutes": {
+          "type": "number"
+        },
+        "workdayEndMinutes": {
+          "type": "number"
+        },
+        "dailyTargetHours": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "syncedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "workdays",
+        "workdayStartMinutes",
+        "workdayEndMinutes",
+        "dailyTargetHours",
+        "updatedAt",
+        "syncedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Per-user workspace anchor document."
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "Objectives and multi-milestone deadlines owned by the user."
+    },
+    "/users/{userId}/steps/{stepId}": {
+      "schema": { "$ref": "#/entities/WBSStep" },
+      "description": "WBS steps owned by the user."
+    },
+    "/users/{userId}/scheduledBlocks/{blockId}": {
+      "schema": { "$ref": "#/entities/ScheduledBlock" },
+      "description": "Scheduled calendar blocks owned by the user."
+    },
+    "/users/{userId}/fixedActivities/{fixedActivityId}": {
+      "schema": { "$ref": "#/entities/FixedActivity" },
+      "description": "Individualized per-date fixed activity blocks owned by the user."
+    },
+    "/users/{userId}/ppcRecords/{weekStart}": {
+      "schema": { "$ref": "#/entities/WeeklyPPCRecord" },
+      "description": "Weekly PPC reliability records and Reasons for Variance."
+    },
+    "/users/{userId}/cfdSnapshots/{date}": {
+      "schema": { "$ref": "#/entities/DailyCFDSnapshot" },
+      "description": "Daily Cumulative Flow Diagram snapshots."
+    },
+    "/users/{userId}/scheduleVersions/{versionId}": {
+      "schema": { "$ref": "#/entities/ScheduleVersion" },
+      "description": "AI schedule version history snapshots."
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/WorkCapacitySettings" },
+      "description": "Work capacity configuration settings."
+    }
+  }
+}
