@@ -1,4 +1,4 @@
-# Firestore Security Specification — Takt Lean Personal Planner
+# Firestore Security Specification — Lean Personal Planner
 
 ## 1. Data Invariants
 1. **Strict Multi-Tenant Isolation**: Every document lives under `/users/{userId}/...`, where `userId == request.auth.uid` and `request.auth.token.email_verified == true`.

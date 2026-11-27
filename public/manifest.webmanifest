@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Takt — Lean Personal Planner",
-  "short_name": "Takt",
+  "name": "Lean Personal Planner",
+  "short_name": "LPP",
   "description": "Minimalist Lean Production personal planning system uniting Kanban, Master Schedule, Work Breakdown Structure, and pull-based Weekly Work Plan.",
   "start_url": "/",
   "scope": "/",
